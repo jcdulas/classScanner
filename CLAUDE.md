@@ -15,10 +15,13 @@ npm test                   # unit tests (vitest), about 1 s
 npm run test:integration   # builds, then runs the extension in VS Code 1.130.0
 npm run generate:synthetic # creates test/synthetic-project (1500 classes)
 npm run benchmark          # scan and layout times on the synthetic project
+npm run preview            # screenshot of the webview in headless Chrome, written to out/preview/
 npm run package            # production build and .vsix
 ```
 
 Run `npm run typecheck` and `npm test` after every change. Run `npm run test:integration` after any change to the extension host or the webview: it is the only test that runs the real webview. It writes PNG, SVG, schema and zip files to `out/integration/`; look at the PNG files to check the rendering. When the synthetic project exists, it also measures frame rates and relation toggle times (spec §8).
+
+After any change to the user interface or to the drawing, run `npm run preview` and look at the screenshot: it is the only way to see the HTML controls, which the PNG exports of the integration tests do not contain. Options: `--theme dark|light`, `--scenario default|selection|zoom|menu|zoomAt` (scripted mouse actions, see `test/preview/harness.html`), `--relations all`, `--size 1000x700`, `--folder test/synthetic-project`, `--output file.png`.
 
 Press F5 in VS Code to try the extension by hand.
 
@@ -40,6 +43,16 @@ The code must be understandable by an intermediate developer with about five yea
 - Prefer a well-known library over a hand-written algorithm.
 - Optimize only where a performance target in the spec requires it, and say so in a comment next to the optimization, with the measurement that justified it.
 - Do not add abstraction layers, configuration options or extension points that the spec does not ask for.
+
+## User interface style
+
+The interface follows a "liquid glass" style with the colors and fonts of the VS Code theme (spec §4.2).
+
+- Never use a native HTML control (`select`, `button`, `input type="checkbox"`, `input type="range"`...). Use the controls of `src/webview/ui/controls.tsx` (`GlassButton`, `Segmented`, `Dropdown`, `ToggleRow`, `Stepper`, `Section`) and add new ones there. The only native element is the text `input` of search fields, styled inside a `.search-field`.
+- Floating panels use the `.glass` class; rows of controls add `.bar`. Colors come from the CSS variables at the top of `styles.css`, which derive from `--vscode-*` variables: never hard-code a theme color.
+- Icons are inline SVG paths in `src/webview/ui/Icon.tsx`.
+- Cards and groups drawn with PixiJS get their glass look from `src/webview/render/glassStyle.ts`.
+- Check both themes and a narrow size (`--size 760x600`) with `npm run preview`.
 
 ## Technology choices
 
@@ -88,4 +101,4 @@ Things that are easy to break:
 - Every C++ construct the extractor supports has a fixture file in `test/fixtures/constructs` and a unit test that checks what is extracted (spec §9).
 - Logic that does not need the DOM (webview model, store, layouts, exports from the model) is unit-tested in Node.
 - Performance targets (spec §8) are measured on the synthetic project, not estimated. Update the measured column of the spec when they change.
-- Mouse interactions are not covered by automated tests: check them by hand with F5.
+- Mouse interactions have no automated assertions. The preview scenarios play some of them (Ctrl+drag selection, wheel zoom, right-click) so that their result can be seen in a screenshot; check the others by hand with F5.

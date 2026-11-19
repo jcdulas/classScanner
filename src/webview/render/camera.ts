@@ -13,6 +13,14 @@ import { Rect } from '../model/geometry';
 export const MIN_SCALE = 0.004;
 export const MAX_SCALE = 2.5;
 
+/** Margins of the view, in screen pixels, that the floating user interface covers. */
+export interface ViewInsets {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 interface CameraAnimation {
   from: CameraState;
   to: CameraState;
@@ -80,15 +88,21 @@ export class Camera {
     this.apply();
   }
 
-  /** The camera state that shows the whole rectangle with a margin. */
-  stateToFit(rect: Rect, maxScale = 1): CameraState {
-    const margin = 40;
-    const scaleX = (this.viewWidth - margin * 2) / Math.max(1, rect.width);
-    const scaleY = (this.viewHeight - margin * 2) / Math.max(1, rect.height);
+  /**
+   * The camera state that shows the whole rectangle inside the part of the view that is not
+   * covered by the floating panels (`insets`, in screen pixels).
+   */
+  stateToFit(rect: Rect, insets: ViewInsets, maxScale = 1): CameraState {
+    const freeWidth = Math.max(50, this.viewWidth - insets.left - insets.right);
+    const freeHeight = Math.max(50, this.viewHeight - insets.top - insets.bottom);
+    const scale = clampScale(Math.min(freeWidth / Math.max(1, rect.width), freeHeight / Math.max(1, rect.height), maxScale));
+    // The rectangle is centered in the free area, which is not centered in the view.
+    const offsetX = (insets.left - insets.right) / 2 / scale;
+    const offsetY = (insets.top - insets.bottom) / 2 / scale;
     return {
-      centerX: rect.x + rect.width / 2,
-      centerY: rect.y + rect.height / 2,
-      scale: clampScale(Math.min(scaleX, scaleY, maxScale)),
+      centerX: rect.x + rect.width / 2 - offsetX,
+      centerY: rect.y + rect.height / 2 - offsetY,
+      scale,
     };
   }
 

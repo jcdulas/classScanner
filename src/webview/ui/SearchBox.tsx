@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DiagramController } from '../controller';
+import { Icon } from './Icon';
 
 const MAX_RESULTS = 30;
 
@@ -69,26 +70,39 @@ export function SearchBox({ controller }: SearchBoxProps) {
 
   return (
     <div class="search">
-      <input
-        ref={inputRef}
-        type="search"
-        placeholder="Search classes (Ctrl+F)"
-        value={query}
-        onInput={(event) => {
-          setQuery(event.currentTarget.value);
-          setHighlightedIndex(0);
-          setIsOpen(true);
-        }}
-        onFocus={() => setIsOpen(true)}
-        onBlur={() => window.setTimeout(() => setIsOpen(false), 150)}
-        onKeyDown={onKeyDown}
-      />
+      <div class="search-field">
+        <Icon name="search" size={15} />
+        <input
+          ref={inputRef}
+          type="text"
+          spellcheck={false}
+          placeholder="Search classes"
+          value={query}
+          onInput={(event) => {
+            setQuery(event.currentTarget.value);
+            setHighlightedIndex(0);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          onBlur={() => window.setTimeout(() => setIsOpen(false), 150)}
+          onKeyDown={onKeyDown}
+        />
+        {query === '' ? (
+          <span class="key-hint">Ctrl F</span>
+        ) : (
+          <span class="search-clear" role="button" title="Clear" onMouseDown={() => setQuery('')}>
+            <Icon name="close" size={13} />
+          </span>
+        )}
+      </div>
       {isOpen && results.length > 0 && (
-        <ul class="search-results">
+        <div class="popover glass search-results" role="listbox">
           {results.map((node, index) => (
-            <li
+            <div
               key={node.id}
-              class={index === highlightedIndex ? 'highlighted' : ''}
+              role="option"
+              aria-selected={index === highlightedIndex}
+              class={`menu-item ${index === highlightedIndex ? 'highlighted' : ''}`}
               onMouseDown={(event) => {
                 event.preventDefault();
                 choose(node.id);
@@ -96,9 +110,9 @@ export function SearchBox({ controller }: SearchBoxProps) {
             >
               <span class="result-name">{node.name}</span>
               <span class="result-namespace">{node.namespace}</span>
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );

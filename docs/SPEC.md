@@ -131,9 +131,14 @@ Rules:
 
 ### 4.2 Style
 
-- Cards with rounded corners, header colored by group (namespace or folder).
+The whole interface follows a "liquid glass" style, with a VS Code touch: every color comes from the active theme (light, dark, high contrast), the accent is the theme's focus color, and the fonts are those of VS Code and of its editor.
+
+- **Controls**: translucent panels that blur what is behind them (`backdrop-filter`), with a bright rim at the top, soft shadows and pill shapes. No native HTML control is used: selects, check boxes, sliders and buttons are replaced by segmented controls, dropdown menus, switches, custom check boxes and steppers (`src/webview/ui/controls.tsx`), all usable with the keyboard. Icons are inline SVG.
+- **Cards**: rounded corners, a header with a top-to-bottom gradient in the color of the group (namespace or folder), a slightly see-through body, a bright rim inside the border and a soft shadow. Real blur behind 1500 cards would be too costly in WebGL, so the glass look is suggested with these cheap shapes (`src/webview/render/glassStyle.ts`).
+- **Groups**: panes of glass tinted with the group color.
+- **Background**: the canvas is transparent; the page behind it shows the editor background with soft patches of the accent colors.
 - Visibility icons for public / protected / private; italics for abstract classes and virtual methods; a badge for `struct`, `union`, `enum` and templates.
-- Colors derived from the active VS Code theme (light, dark, high contrast), updated when the theme changes.
+- Colors are updated when the theme changes.
 
 ### 4.3 Compact view and full view
 
@@ -198,14 +203,21 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 
 A tooltip shows the qualified name of a card when its text is not readable, and the counts of a merged link.
 
-Collapsible side panel:
+The diagram fills the whole view; the user interface floats above it:
 
-- Toggles for the seven relation types, each with its edge count.
-- Filters by entity type (class, struct, union, enum, template), by namespace and by folder (checkbox trees).
-- Display of external nodes (declarations without a definition).
-- Choice of layout and grouping criterion.
+- **Top left**: side panel toggle and search.
+- **Top center**: layout (segmented control), grouping criterion (dropdown), "Recompute layout", and the display mode of every card (auto, compact, full).
+- **Top right**: rescan and export.
+- **Side panel** (left, can be hidden; each section can be folded):
+  - a switch for each of the seven relation types, with its line style and edge count;
+  - the isolation depth;
+  - filters by entity type (class, struct, union, enum, template) and display of external nodes (declarations without a definition);
+  - filters by namespace and by folder (check box trees with a text filter).
+- **Bottom left**: status (classes shown, level of detail, scan duration) and access to the scan report.
+- **Bottom right**: zoom controls (zoom out, zoom level, zoom in, fit) above the minimap, which shows the groups and a draggable viewport rectangle.
+- **Selection bar** (bottom center, only while classes are selected): display mode of the selection, isolate and go to source for a single class, schema for a language model, sources as `.zip`, clear the selection.
 
-Minimap in a corner: overview of the groups, draggable viewport rectangle.
+"Fit" places the diagram in the part of the view that the floating panels leave free. Below 1280 px of width the controls of the top bars keep only their icon, and below 860 px so do the buttons.
 
 ### 4.7 Export
 
@@ -333,7 +345,8 @@ The measurements were made on the synthetic project of the test suite (`npm run 
 - **Unit tests** (`npm test`, vitest): a corpus of C++ files covering each construct (multiple inheritance, templates, nested classes, export macros, `#if`...) in `test/fixtures/constructs`, a small multi-file project in `test/fixtures/project`, and tests of name resolution, relations, card geometry, layouts, the webview store, the schema and the source file collection.
 - **Integration tests** (`npm run test:integration`): run the extension in VS Code 1.130.0 (or another version with `--vscode-version`), scan the fixture project, check that the webview reports the diagram on screen without error, check the saved arrangement, and export PNG, SVG, schema and `.zip` files to `out/integration/`. On the synthetic project they also measure frame times and relation toggle times.
 - **Benchmark** (`npm run benchmark`): scan and layout times on the synthetic project.
-- Not automated: mouse interactions (drag, rectangle selection, context menu) and validation on a real, large open-source project.
+- **Preview** (`npm run preview`): renders the webview in a headless browser, outside of VS Code, and saves a screenshot. Scenarios play mouse actions first (Ctrl+drag selection, wheel zoom, right-click), which shows that these interactions work.
+- Not automated: assertions on mouse interactions (dragging cards, double-click...) and validation on a real, large open-source project.
 
 ## 10. Milestones
 

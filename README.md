@@ -14,7 +14,7 @@ A VS Code extension that scans a folder of C++ sources and shows an interactive 
 - **Navigation**: click a member to open its declaration, search by name (Ctrl+F), filter by kind, namespace or folder, highlight the neighbors of the selection, isolate a neighborhood, minimap.
 - **Export** the current view or the whole diagram as PNG, or the diagram or the selection as SVG with selectable text.
 - **Export the selected classes** as a compact text schema to paste into an LLM prompt, or as a `.zip` archive of their source files (headers and `.cpp` files), flat or with the folder tree.
-- Follows the light, dark and high contrast VS Code themes.
+- A "liquid glass" interface: translucent floating panels over a full-view diagram, with the colors and fonts of the active VS Code theme (light, dark or high contrast).
 
 ## Getting started
 
@@ -40,11 +40,20 @@ A VS Code extension that scans a folder of C++ sources and shows an interactive 
 | Ctrl + F | Search a class |
 | Escape | Close the menu, clear the selection, then leave the isolation |
 
-The toolbar sets the layout, the grouping and the display mode of every card. **Recompute layout** lays the diagram out again, which reclaims the room left by cards made compact and discards the manual moves of the current layout.
+The diagram fills the whole view and the controls float above it:
+
+- **Top left**: show or hide the side panel, and search.
+- **Top center**: the layout (grouped, global hierarchy, organic), the grouping, **Recompute layout**, and the display mode of every card (auto, compact, full). Recompute layout lays the diagram out again, which reclaims the room left by cards made compact and discards the manual moves of the current layout.
+- **Top right**: rescan and export.
+- **Side panel**: a switch per relation kind, the isolation depth, and the filters by kind, namespace and folder. Each section can be folded.
+- **Bottom**: the status and the scan report on the left, zoom controls and the minimap on the right.
+- **Selection bar**: appears at the bottom while classes are selected, with the actions that apply to them: display mode, isolate, go to source, schema for an LLM, sources as `.zip`.
+
+![Selection bar and neighborhood focus, light theme](docs/images/selection.png)
 
 ### Exporting the selected classes
 
-Select classes (click, Shift + click, or Ctrl + drag a rectangle), then right-click one of them, or run **classScanner: Export Diagram**.
+Select classes (click, Shift + click, or Ctrl + drag a rectangle), then use the selection bar, right-click one of them, or run **classScanner: Export Diagram**.
 
 - **Copy schema for an LLM** puts a compact description of the selected classes on the clipboard: classes by namespace with their bases, members and file locations, then the active relations, with a legend. For example:
 
@@ -112,6 +121,7 @@ npm run typecheck          # TypeScript checks of the extension and the webview
 npm run test:integration   # runs VS Code 1.130.0 with the extension, see out/integration/
 npm run generate:synthetic # generates the 1500-class project used to measure performance
 npm run benchmark          # scan and layout times on the synthetic project
+npm run preview            # screenshot of the webview in a headless browser, in out/preview/
 npm run package            # builds the .vsix
 ```
 

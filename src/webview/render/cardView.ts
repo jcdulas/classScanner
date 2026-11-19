@@ -11,6 +11,7 @@ import { BitmapText, Container, Graphics } from 'pixi.js';
 import { Visibility } from '../../shared/graphModel';
 import { CARD_STYLE, CardLayout, CardRow, FontMetrics } from '../model/cardGeometry';
 import { CARD_FONTS } from './fonts';
+import { darken, lighten, verticalGradient } from './glassStyle';
 import { CardContent } from './levelOfDetail';
 import { Theme, contrastingTextColor } from './theme';
 
@@ -117,32 +118,66 @@ export class CardView {
   /**
    * Far away, the whole card is filled with its group color ("solid"). Closer,
    * only the header band is colored and the body shows the members.
+   * See glassStyle.ts for how the glass look is built.
    */
   private drawBackground(): void {
     const { width, height, separatorYs } = this.layout;
     const radius = CARD_STYLE.cornerRadius;
     const headerHeight = CARD_STYLE.headerHeight;
+    const theme = this.theme;
+    const color = this.headerColor;
     const graphics = this.background;
     graphics.clear();
+
+    // A soft shadow: three larger and larger faint shapes, shifted down, fade out like a blur.
+    const shadowAlpha = theme.isDark ? 0.1 : 0.04;
+    for (const spread of [5, 3, 1]) {
+      graphics.roundRect(-spread, 3 - spread, width + spread * 2, height + spread * 2, radius + spread).fill({ color: 0x000000, alpha: shadowAlpha });
+    }
+    if (this.isSelected) {
+      graphics.roundRect(-3, -3, width + 6, height + 6, radius + 3).stroke({ width: 4, color: theme.accent, alpha: 0.35 });
+    }
+
     if (isSolid(this.contentKind)) {
-      graphics.roundRect(0, 0, width, height, radius).fill(this.headerColor);
+      graphics.roundRect(0, 0, width, height, radius).fill(verticalGradient(lighten(color, 0.22), darken(color, 0.1)));
     } else {
-      graphics.roundRect(0, 0, width, height, radius).fill(this.theme.cardFill);
-      graphics.roundRect(0, 0, width, Math.min(height, headerHeight), radius).fill(this.headerColor);
-      if (height > headerHeight) {
-        // Squares the bottom corners of the header band.
-        graphics.rect(0, headerHeight - radius, width, radius).fill(this.headerColor);
+      const headerGradient = verticalGradient(lighten(color, 0.22), color);
+      if (height <= headerHeight) {
+        // A card reduced to its header. The body is not drawn under it: filling the same
+        // rounded rectangle twice leaves a hairline across the card.
+        graphics.roundRect(0, 0, width, height, radius).fill(headerGradient);
+      } else {
+        // The body lets a little of what is behind show through, like tinted glass.
+        graphics.roundRect(0, 0, width, height, radius).fill({ color: theme.cardFill, alpha: 0.9 });
+        // The header band: rounded corners at the top, square corners at the bottom.
+        graphics
+          .moveTo(0, headerHeight)
+          .lineTo(0, radius)
+          .quadraticCurveTo(0, 0, radius, 0)
+          .lineTo(width - radius, 0)
+          .quadraticCurveTo(width, 0, width, radius)
+          .lineTo(width, headerHeight)
+          .closePath()
+          .fill(headerGradient);
       }
-      for (const y of separatorYs) {
-        if (y > headerHeight) {
+      const separators = separatorYs.filter((y) => y > headerHeight);
+      if (separators.length > 0) {
+        // beginPath starts a new path: without it, the stroke would also outline the header.
+        graphics.beginPath();
+        for (const y of separators) {
           graphics.moveTo(0, y).lineTo(width, y);
         }
+        graphics.stroke({ width: 1, color: theme.cardBorder, alpha: 0.7 });
       }
-      graphics.stroke({ width: 1, color: this.theme.cardBorder });
     }
+
+    // The bright rim just inside the border, then the border itself.
+    graphics
+      .roundRect(1, 1, width - 2, height - 2, radius - 1)
+      .stroke({ width: 1, color: 0xffffff, alpha: theme.isDark ? 0.16 : 0.55 });
     graphics
       .roundRect(0, 0, width, height, radius)
-      .stroke({ width: this.isSelected ? 3 : 1, color: this.isSelected ? this.theme.accent : this.theme.cardBorder });
+      .stroke({ width: this.isSelected ? 2 : 1, color: this.isSelected ? theme.accent : theme.cardBorder });
   }
 
   private buildContent(kind: CardContent): Container {
@@ -187,6 +222,10 @@ export class CardView {
   }
 
   private addRows(content: Container): void {
+    if (this.layout.rows.length === 0) {
+      // No Graphics object is created for nothing: PixiJS draws stray marks for an empty one.
+      return;
+    }
     const icons = new Graphics();
     content.addChild(icons);
     const textX = CARD_STYLE.paddingX + CARD_STYLE.iconColumnWidth;

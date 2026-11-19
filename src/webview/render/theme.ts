@@ -99,12 +99,12 @@ function cssColorToNumber(value: string, fallback: number): number {
   return match === null ? fallback : (Number(match[1]) << 16) | (Number(match[2]) << 8) | Number(match[3]);
 }
 
-/** Twelve hues, darker on a light theme and lighter on a dark one, so that headers keep good contrast. */
+/** Twelve hues, deep enough in both kinds of themes for white header text to read well. */
 function buildGroupPalette(isDark: boolean): number[] {
   const palette: number[] = [];
   for (let index = 0; index < 12; index++) {
     const hue = (index * 137.5) % 360; // The "golden angle" spreads hues evenly.
-    palette.push(hslToNumber(hue, isDark ? 0.45 : 0.55, isDark ? 0.38 : 0.62));
+    palette.push(hslToNumber(hue, isDark ? 0.45 : 0.5, isDark ? 0.38 : 0.47));
   }
   return palette;
 }

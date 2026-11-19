@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<!--
+  Shows the webview in a plain browser, outside of VS Code (scripts/previewWebview.mjs).
+  It provides what VS Code normally provides: the theme CSS variables, the body
+  class of the theme, and `acquireVsCodeApi`. The URL parameters choose the theme
+  and a scenario of scripted mouse actions.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>classScanner preview</title>
+  <style id="theme"></style>
+  <link rel="stylesheet" href="webview/main.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    const parameters = new URLSearchParams(location.search);
+    const themeName = parameters.get('theme') || 'dark';
+    const scenario = parameters.get('scenario') || 'default';
+
+    // A subset of the colors of the default VS Code themes ("Dark Modern" and "Light Modern").
+    const THEMES = {
+      dark: {
+        'editor-background': '#1f1f1f', 'foreground': '#cccccc', 'editor-foreground': '#cccccc',
+        'descriptionForeground': '#9d9d9d', 'editorWidget-background': '#202020', 'editorWidget-border': '#454545',
+        'focusBorder': '#0078d4', 'sideBar-background': '#181818', 'panel-border': '#2b2b2b',
+        'sideBarTitle-foreground': '#cccccc', 'button-background': '#0078d4', 'button-foreground': '#ffffff',
+        'widget-shadow': 'rgba(0,0,0,0.36)', 'list-hoverBackground': '#2a2d2e',
+        'charts-red': '#f14c4c', 'charts-blue': '#3794ff', 'charts-yellow': '#cca700', 'charts-orange': '#d18616',
+        'charts-green': '#89d185', 'charts-purple': '#b180d7', 'charts-lines': '#808080',
+        'inputValidation-warningBackground': '#352a05', 'inputValidation-warningBorder': '#b89500',
+      },
+      light: {
+        'editor-background': '#ffffff', 'foreground': '#3b3b3b', 'editor-foreground': '#3b3b3b',
+        'descriptionForeground': '#717171', 'editorWidget-background': '#f8f8f8', 'editorWidget-border': '#c8c8c8',
+        'focusBorder': '#005fb8', 'sideBar-background': '#f8f8f8', 'panel-border': '#e5e5e5',
+        'sideBarTitle-foreground': '#3b3b3b', 'button-background': '#005fb8', 'button-foreground': '#ffffff',
+        'widget-shadow': 'rgba(0,0,0,0.16)', 'list-hoverBackground': '#f2f2f2',
+        'charts-red': '#e51400', 'charts-blue': '#1a85ff', 'charts-yellow': '#bf8803', 'charts-orange': '#d18616',
+        'charts-green': '#388a34', 'charts-purple': '#652d90', 'charts-lines': '#808080',
+        'inputValidation-warningBackground': '#f6f5d2', 'inputValidation-warningBorder': '#b89500',
+      },
+    };
+    const variables = Object.entries(THEMES[themeName]).map(([name, value]) => `--vscode-${name}: ${value};`).join('\n');
+    document.getElementById('theme').textContent = `:root {
+      ${variables}
+      --vscode-font-family: "Segoe UI", system-ui, sans-serif;
+      --vscode-font-size: 13px;
+      --vscode-editor-font-family: Consolas, "Courier New", monospace;
+    }`;
+    document.body.className = themeName === 'dark' ? 'vscode-dark' : 'vscode-light';
+
+    window.classScannerBootConfig = { layoutWorkerUrl: 'webview/layoutWorker.js' };
+
+    function mouse(type, x, y, options = {}) {
+      const canvas = document.querySelector('.diagram-host canvas');
+      const bounds = canvas.getBoundingClientRect();
+      const init = { bubbles: true, clientX: bounds.left + x, clientY: bounds.top + y, button: 0, pointerId: 1, ...options };
+      const EventClass = type.startsWith('pointer') ? PointerEvent : MouseEvent;
+      canvas.dispatchEvent(new EventClass(type, init));
+    }
+    function wheel(x, y, deltaY) {
+      const canvas = document.querySelector('.diagram-host canvas');
+      const bounds = canvas.getBoundingClientRect();
+      canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, clientX: bounds.left + x, clientY: bounds.top + y, deltaY }));
+    }
+    function dragRectangle(fromX, fromY, toX, toY, options) {
+      mouse('pointerdown', fromX, fromY, options);
+      mouse('pointermove', (fromX + toX) / 2, (fromY + toY) / 2, options);
+      mouse('pointermove', toX, toY, options);
+      mouse('pointerup', toX, toY, options);
+    }
+    const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+    // Scripted actions, run once the diagram is on screen.
+    const SCENARIOS = {
+      default: async () => {},
+      // Ctrl + drag a rectangle over the middle of the diagram.
+      selection: async () => {
+        const host = document.querySelector('.diagram-host');
+        dragRectangle(host.clientWidth * 0.42, host.clientHeight * 0.25, host.clientWidth * 0.7, host.clientHeight * 0.75, { ctrlKey: true });
+      },
+      // Zoom in until the members are shown.
+      zoom: async () => {
+        const host = document.querySelector('.diagram-host');
+        for (let step = 0; step < 6; step++) {
+          wheel(host.clientWidth * 0.55, host.clientHeight * 0.5, -160);
+          await wait(60);
+        }
+      },
+      // Zoom in on the point given by the `x` and `y` URL parameters (fractions of the view size).
+      zoomAt: async () => {
+        const host = document.querySelector('.diagram-host');
+        for (let step = 0; step < 8; step++) {
+          wheel(host.clientWidth * Number(parameters.get('x')), host.clientHeight * Number(parameters.get('y')), -160);
+          await wait(60);
+        }
+      },
+      // Right-click in the middle of the diagram.
+      menu: async () => {
+        const host = document.querySelector('.diagram-host');
+        mouse('contextmenu', host.clientWidth * 0.55, host.clientHeight * 0.5, { button: 2 });
+      },
+    };
+
+    const sentMessages = [];
+    window.acquireVsCodeApi = () => ({
+      setState() {},
+      postMessage(message) {
+        sentMessages.push(message);
+        if (message.type === 'ready') {
+          fetch('graph.json').then((response) => response.json()).then((graphMessage) => window.postMessage(graphMessage, '*'));
+        } else if (message.type === 'diagramShown') {
+          wait(900).then(() => SCENARIOS[scenario]()).then(() => wait(700)).then(() => {
+            document.title = 'preview-ready';
+          });
+        } else if (message.type === 'error') {
+          document.title = 'preview-error: ' + message.message;
+          console.error(message.message, message.stack);
+        }
+      },
+    });
+  </script>
+  <script src="webview/main.js"></script>
+</body>
+</html>

@@ -46,9 +46,8 @@ export class Minimap {
     this.theme = theme;
     this.worldBounds = expandRect(unionOfRects(shapes.map((shape) => shape.rect)) ?? { x: 0, y: 0, width: 1, height: 1 }, 50);
     const context = this.cache.getContext('2d')!;
+    // No background: the glass style of the minimap element shows through (see styles.css).
     context.clearRect(0, 0, WIDTH, HEIGHT);
-    context.fillStyle = toCssColor(theme.background);
-    context.fillRect(0, 0, WIDTH, HEIGHT);
     for (const shape of shapes) {
       const rect = this.worldToMinimap(shape.rect);
       context.globalAlpha = shape.isGroup ? 0.25 : 0.9;

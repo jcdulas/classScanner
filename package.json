@@ -151,6 +151,7 @@
     "test:watch": "vitest",
     "test:integration": "npm run build && node scripts/runIntegrationTests.mjs",
     "benchmark": "npm run build && node scripts/benchmark.mjs",
+    "preview": "npm run build && node scripts/previewWebview.mjs",
     "generate:synthetic": "node scripts/generateSyntheticProject.mjs",
     "package": "npm run build -- --production && vsce package --no-dependencies",
     "vscode:prepublish": "npm run build -- --production"

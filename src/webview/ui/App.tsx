@@ -1,14 +1,16 @@
 // The root component of the webview user interface.
 //
-// The WebGL canvas lives in `diagram-host`; the user interface (toolbar, side
-// panel, menus) is regular HTML around and above it.
+// The WebGL canvas fills the whole webview (`diagram-host`). The user
+// interface floats above it as glass panels: bars at the top, the side panel
+// on the left, the selection bar and status at the bottom.
 
 import { useEffect, useRef } from 'preact/hooks';
 import { DiagramController } from '../controller';
 import { ContextMenu } from './ContextMenu';
+import { SelectionBar } from './SelectionBar';
 import { SidePanel } from './SidePanel';
-import { PhaseOverlay, StatusBar } from './StatusBar';
-import { Toolbar } from './Toolbar';
+import { PhaseOverlay, StatusPill, ZoomControls } from './StatusBar';
+import { TopBar } from './TopBar';
 import { useStore } from './useStore';
 
 interface AppProps {
@@ -44,17 +46,15 @@ export function App({ controller }: AppProps) {
   }, [store]);
 
   return (
-    <div class="app">
-      <Toolbar controller={controller} />
-      <div class="main">
-        {store.isSidePanelOpen && <SidePanel controller={controller} />}
-        <div class="diagram-area">
-          <div class="diagram-host" ref={hostRef} />
-          <ContextMenu controller={controller} />
-          <PhaseOverlay controller={controller} />
-          <StatusBar controller={controller} />
-        </div>
-      </div>
+    <div class={`app ${store.isSidePanelOpen ? 'panel-open' : ''}`}>
+      <div class="diagram-host" ref={hostRef} />
+      <PhaseOverlay controller={controller} />
+      <TopBar controller={controller} />
+      {store.isSidePanelOpen && <SidePanel controller={controller} />}
+      <StatusPill controller={controller} />
+      <SelectionBar controller={controller} />
+      <ZoomControls controller={controller} />
+      <ContextMenu controller={controller} />
     </div>
   );
 }

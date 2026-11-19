@@ -28,7 +28,7 @@ export const CARD_STYLE = {
   iconColumnWidth: 14,
   minWidth: 150,
   maxLineCharacters: 60,
-  cornerRadius: 6,
+  cornerRadius: 12,
 };
 
 /**

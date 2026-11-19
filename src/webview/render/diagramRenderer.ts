@@ -25,7 +25,7 @@ import {
 } from '../model/sceneGeometry';
 import { edgeSegment } from '../model/edgeGeometry';
 import { ChangeTopic, DiagramStore, LevelOfDetail, StoreChange } from '../state/diagramStore';
-import { Camera } from './camera';
+import { Camera, ViewInsets } from './camera';
 import { CardLayer } from './cardLayer';
 import { EdgeLayer } from './edgeLayer';
 import { GroupLayer } from './groupLayer';
@@ -134,7 +134,8 @@ export class DiagramRenderer {
     const app = new Application();
     await app.init({
       preference: 'webgl',
-      background: readTheme().background,
+      // The canvas is transparent: the page background shows behind the diagram (see styles.css).
+      backgroundAlpha: 0,
       antialias: true,
       autoDensity: true,
       resolution: window.devicePixelRatio || 1,
@@ -155,7 +156,7 @@ export class DiagramRenderer {
     if (bounds === undefined) {
       return;
     }
-    const target = this.camera.stateToFit(bounds);
+    const target = this.camera.stateToFit(bounds, this.viewInsets());
     if (animate) {
       this.camera.animateTo(target);
     } else {
@@ -276,7 +277,6 @@ export class DiagramRenderer {
     }
     if (has('theme')) {
       this.theme = readTheme();
-      this.app.renderer.background.color = this.theme.background;
     }
     if (has('cards')) {
       this.cardLayer.syncLayouts(this.store);
@@ -459,7 +459,7 @@ export class DiagramRenderer {
     this.cardLayer.syncShown((id) => this.store.visibleNodeIds.has(id), this.animation.to);
     const bounds = unionOfRects(Array.from(this.store.visibleNodeIds).flatMap((id) => cardRect(this.store, id) ?? []));
     if (bounds !== undefined) {
-      this.camera.animateTo(this.camera.stateToFit(bounds), LAYOUT_ANIMATION_MS);
+      this.camera.animateTo(this.camera.stateToFit(bounds, this.viewInsets()), LAYOUT_ANIMATION_MS);
     }
   }
 
@@ -515,8 +515,8 @@ export class DiagramRenderer {
     this.selectionRectangle.clear();
     if (rect !== undefined) {
       this.selectionRectangle
-        .rect(rect.x, rect.y, rect.width, rect.height)
-        .fill({ color: this.theme.accent, alpha: 0.1 })
+        .roundRect(rect.x, rect.y, rect.width, rect.height, 8 / this.camera.scale)
+        .fill({ color: this.theme.accent, alpha: 0.12 })
         .stroke({ width: 1 / this.camera.scale, color: this.theme.accent });
     }
   }
@@ -578,6 +578,14 @@ export class DiagramRenderer {
     this.app.renderer.resize(width, height);
     this.camera.setViewSize(width, height);
     this.markCameraMoved();
+  }
+
+  /**
+   * The parts of the view covered by the floating panels, which "fit to view" must avoid.
+   * These sizes match the layout of styles.css: top bars, side panel, bottom pills and minimap.
+   */
+  private viewInsets(): ViewInsets {
+    return { left: this.store.isSidePanelOpen ? 296 : 24, top: 72, right: 24, bottom: 64 };
   }
 
   private shownBounds(): Rect | undefined {

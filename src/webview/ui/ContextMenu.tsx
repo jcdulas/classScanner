@@ -1,12 +1,16 @@
 // The right-click menu of the diagram (spec §4.3, §4.6).
 
 import { DiagramController } from '../controller';
+import { Icon, IconName } from './Icon';
 import { useStore } from './useStore';
 
 interface MenuItem {
   label: string;
+  icon: IconName;
   action: () => void;
 }
+
+const MENU_WIDTH = 270;
 
 interface ContextMenuProps {
   controller: DiagramController;
@@ -24,50 +28,65 @@ export function ContextMenu({ controller }: ContextMenuProps) {
   if (node !== undefined) {
     // The display mode actions apply to the whole selection, which contains the clicked class.
     const ids = Array.from(store.selection);
+    const classes = `${ids.length} ${ids.length === 1 ? 'class' : 'classes'}`;
     items.push(
-      { label: 'Show full', action: () => store.setDisplayMode(ids, 'full') },
-      { label: 'Show compact', action: () => store.setDisplayMode(ids, 'compact') },
-      { label: 'Follow zoom (auto)', action: () => store.setDisplayMode(ids, 'auto') },
+      { label: 'Show full', icon: 'full', action: () => store.setDisplayMode(ids, 'full') },
+      { label: 'Show compact', icon: 'compact', action: () => store.setDisplayMode(ids, 'compact') },
+      { label: 'Follow zoom (auto)', icon: 'auto', action: () => store.setDisplayMode(ids, 'auto') },
       'separator',
-      { label: `Isolate neighborhood (${store.isolationDepth} ${store.isolationDepth === 1 ? 'level' : 'levels'})`, action: () => store.isolate(node.id) },
-      { label: 'Go to source', action: () => controller.openSource(node.file, node.line) },
+      {
+        label: `Isolate neighborhood (${store.isolationDepth} ${store.isolationDepth === 1 ? 'level' : 'levels'})`,
+        icon: 'isolate',
+        action: () => store.isolate(node.id),
+      },
+      { label: 'Go to source', icon: 'code', action: () => controller.openSource(node.file, node.line) },
       'separator',
-      { label: `Copy schema for an LLM (${ids.length} ${ids.length === 1 ? 'class' : 'classes'})`, action: () => controller.copySelectionAsSchema() },
-      { label: 'Export sources as .zip...', action: () => controller.exportSelectionSources() },
+      { label: `Copy schema for an LLM (${classes})`, icon: 'copy', action: () => controller.copySelectionAsSchema() },
+      { label: `Export sources as .zip (${classes})`, icon: 'archive', action: () => controller.exportSelectionSources() },
     );
     if (store.hasGroupBoxes) {
       const groupKey = store.groupKeyByNode.get(node.id) ?? '';
-      items.push('separator', { label: 'Collapse group', action: () => store.toggleGroupCollapsed(groupKey) });
+      items.push('separator', { label: 'Collapse group', icon: 'collapse', action: () => store.toggleGroupCollapsed(groupKey) });
     }
   } else if (menu.groupKey !== undefined) {
     const groupKey = menu.groupKey;
     const label = store.collapsedGroups.has(groupKey) ? 'Expand group' : 'Collapse group';
-    items.push({ label, action: () => store.toggleGroupCollapsed(groupKey) });
+    items.push({ label, icon: 'collapse', action: () => store.toggleGroupCollapsed(groupKey) });
   } else {
-    items.push({ label: 'Fit to view', action: () => controller.fitToView() });
+    items.push({ label: 'Fit to view', icon: 'fit', action: () => controller.fitToView() });
   }
   if (store.isolation !== null) {
-    items.push('separator', { label: 'Exit isolation', action: () => store.clearIsolation() });
+    items.push('separator', { label: 'Exit isolation', icon: 'close', action: () => store.clearIsolation() });
   }
 
+  // Keeps the menu inside the view when the click is near the right or bottom edge.
+  const estimatedHeight = items.reduce((height, item) => height + (item === 'separator' ? 11 : 31), 14);
+  const left = Math.max(8, Math.min(menu.screenX, window.innerWidth - MENU_WIDTH - 8));
+  const top = Math.max(8, Math.min(menu.screenY, window.innerHeight - estimatedHeight - 8));
+
   return (
-    <ul class="context-menu" style={{ left: `${menu.screenX}px`, top: `${menu.screenY}px` }}>
+    <div role="menu" class="context-menu popover glass" style={{ left: `${left}px`, top: `${top}px`, width: `${MENU_WIDTH}px` }}>
       {items.map((item, index) =>
         item === 'separator' ? (
-          <li key={`separator-${index}`} class="menu-separator" />
+          <div key={`separator-${index}`} class="menu-separator" />
         ) : (
-          <li
+          <div
             key={item.label}
+            role="menuitem"
+            class="menu-item"
             onMouseDown={(event) => {
               event.preventDefault();
               store.openContextMenu(null);
               item.action();
             }}
           >
+            <span class="menu-check">
+              <Icon name={item.icon} size={14} />
+            </span>
             {item.label}
-          </li>
+          </div>
         ),
       )}
-    </ul>
+    </div>
   );
 }

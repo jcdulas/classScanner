@@ -1,15 +1,17 @@
-// The status line at the bottom of the diagram, and the messages shown over it.
+// The small floating elements around the diagram: the status pill (bottom left), the zoom
+// controls (bottom right, above the minimap), and the messages shown while the diagram is busy.
 
 import { DiagramController } from '../controller';
-import { useStore } from './useStore';
+import { GlassButton } from './controls';
+import { useCameraScale, useStore } from './useStore';
 
-interface StatusBarProps {
+interface ControllerProps {
   controller: DiagramController;
 }
 
-const LEVEL_LABELS = { overview: 'Overview', compact: 'Compact', full: 'Full detail' };
+const LEVEL_LABELS = { overview: 'Overview', compact: 'Names', full: 'Full detail' };
 
-export function StatusBar({ controller }: StatusBarProps) {
+export function StatusPill({ controller }: ControllerProps) {
   const store = useStore(controller.store);
   const report = store.report;
   if (store.graph === undefined || report === undefined) {
@@ -17,39 +19,53 @@ export function StatusBar({ controller }: StatusBarProps) {
   }
   const hasWarnings = report.parseErrorCount > 0 || report.unresolvedTypeReferenceCount > 0 || report.skippedLargeFiles.length > 0;
   return (
-    <div class="status-bar">
+    <div class="status-pill glass bar">
       <span>
-        {store.visibleNodeIds.size} / {store.graph.nodes.length} classes shown
+        <strong>{store.visibleNodeIds.size}</strong> of {store.graph.nodes.length} classes
       </span>
-      <span>{LEVEL_LABELS[store.levelOfDetail]}</span>
-      {store.selection.size > 0 && <span>{store.selection.size} selected</span>}
+      <span class="status-muted">{LEVEL_LABELS[store.levelOfDetail]}</span>
       {store.isolation !== null && (
         <span class="chip">
           Isolated: {store.nodeById.get(store.isolation.nodeId)?.name}
-          <button title="Exit isolation" onClick={() => store.clearIsolation()}>
-            ×
-          </button>
+          <GlassButton icon="close" title="Exit isolation" onPress={() => store.clearIsolation()} />
         </span>
       )}
-      <span class="spacer" />
-      <span>
-        {report.scannedFileCount} files scanned in {(report.durationMs / 1000).toFixed(1)} s
+      <span class="status-muted">
+        {report.scannedFileCount} files, {(report.durationMs / 1000).toFixed(1)} s
       </span>
-      <button class={hasWarnings ? 'link warning' : 'link'} onClick={() => controller.showReport()}>
-        {hasWarnings ? 'Scan report (warnings)' : 'Scan report'}
-      </button>
+      <GlassButton
+        icon="report"
+        label={hasWarnings ? 'Warnings' : undefined}
+        title={hasWarnings ? 'The scan reported warnings: open the scan report' : 'Open the scan report'}
+        isActive={hasWarnings}
+        onPress={() => controller.showReport()}
+      />
+    </div>
+  );
+}
+
+export function ZoomControls({ controller }: ControllerProps) {
+  const scale = useCameraScale(controller.store);
+  return (
+    <div class="zoom-controls glass bar">
+      <GlassButton icon="minus" title="Zoom out" onPress={() => controller.zoomBy(1 / 1.4)} />
+      <span class="zoom-value" title="Zoom level">
+        {scale === undefined ? '' : `${Math.round(scale * 100)}%`}
+      </span>
+      <GlassButton icon="plus" title="Zoom in" onPress={() => controller.zoomBy(1.4)} />
+      <GlassButton icon="fit" title="Show the whole diagram" onPress={() => controller.fitToView()} />
     </div>
   );
 }
 
 /** Full-screen messages while there is nothing to show yet, and a banner for errors. */
-export function PhaseOverlay({ controller }: StatusBarProps) {
+export function PhaseOverlay({ controller }: ControllerProps) {
   const store = useStore(controller.store);
   const banner =
     store.failureMessage !== '' && store.phase !== 'failed' ? (
-      <div class="banner">
-        {store.failureMessage}
-        <button onClick={() => store.dismissFailure()}>Dismiss</button>
+      <div class="banner glass bar">
+        <span>{store.failureMessage}</span>
+        <GlassButton icon="close" title="Dismiss" onPress={() => store.dismissFailure()} />
       </div>
     ) : null;
 
@@ -57,23 +73,41 @@ export function PhaseOverlay({ controller }: StatusBarProps) {
     return (
       <>
         {banner}
-        <div class="busy-indicator">Computing layout...</div>
+        <div class="busy-indicator glass bar">
+          <span class="spinner" />
+          Computing layout...
+        </div>
       </>
     );
   }
   if (store.phase === 'scanning') {
     const { parsedFileCount, totalFileCount } = store.scanProgress;
-    const progress = totalFileCount === 0 ? 'Listing files...' : `Parsing ${parsedFileCount} / ${totalFileCount} files...`;
-    return store.graph === undefined ? <div class="overlay">{progress}</div> : <div class="busy-indicator">{progress}</div>;
+    const progress = totalFileCount === 0 ? 'Listing files...' : `Parsing ${parsedFileCount} of ${totalFileCount} files...`;
+    const indicator = (
+      <div class="busy-indicator glass bar">
+        <span class="spinner" />
+        {progress}
+      </div>
+    );
+    return store.graph === undefined ? <div class="overlay">{indicator}</div> : indicator;
   }
   if (store.phase === 'waiting') {
-    return <div class="overlay">Waiting for the scan...</div>;
+    return (
+      <div class="overlay">
+        <div class="busy-indicator glass bar">
+          <span class="spinner" />
+          Waiting for the scan...
+        </div>
+      </div>
+    );
   }
   if (store.phase === 'failed') {
     return (
       <div class="overlay">
-        <p>{store.failureMessage}</p>
-        <button onClick={() => controller.rescan()}>Scan again</button>
+        <div class="failure glass">
+          <p>{store.failureMessage}</p>
+          <GlassButton icon="rescan" label="Scan again" title="Scan the folder again" variant="accent" onPress={() => controller.rescan()} />
+        </div>
       </div>
     );
   }
