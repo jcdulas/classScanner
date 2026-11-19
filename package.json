@@ -4,7 +4,7 @@
   "description": "Scans a folder of C++ sources and displays an interactive WebGL class diagram that stays usable beyond 1000 classes.",
   "version": "0.1.0",
   "publisher": "jcdulas",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "BSD-3-Clause",
   "repository": {
     "type": "git",
     "url": "https://github.com/jcdulas/classScanner.git"
@@ -158,6 +158,7 @@
   "dependencies": {
     "d3-force": "3.0.1",
     "elkjs": "0.12.1",
+    "fflate": "0.8.3",
     "flatbush": "4.7.0",
     "picomatch": "4.0.7",
     "pixi.js": "8.23.0",

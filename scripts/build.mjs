@@ -10,7 +10,7 @@
 // Usage: node scripts/build.mjs [--watch] [--production]
 
 import * as esbuild from 'esbuild';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -73,6 +73,10 @@ async function copyWasmFiles() {
 }
 
 async function main() {
+  if (!isWatchMode) {
+    // Start from an empty folder, so that no file of an older build ends up in the package.
+    await rm(path.join(projectRoot, 'dist'), { recursive: true, force: true });
+  }
   await copyWasmFiles();
   if (isWatchMode) {
     const nodeContext = await esbuild.context(nodeBundles);

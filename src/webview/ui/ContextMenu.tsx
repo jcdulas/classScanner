@@ -31,6 +31,9 @@ export function ContextMenu({ controller }: ContextMenuProps) {
       'separator',
       { label: `Isolate neighborhood (${store.isolationDepth} ${store.isolationDepth === 1 ? 'level' : 'levels'})`, action: () => store.isolate(node.id) },
       { label: 'Go to source', action: () => controller.openSource(node.file, node.line) },
+      'separator',
+      { label: `Copy schema for an LLM (${ids.length} ${ids.length === 1 ? 'class' : 'classes'})`, action: () => controller.copySelectionAsSchema() },
+      { label: 'Export sources as .zip...', action: () => controller.exportSelectionSources() },
     );
     if (store.hasGroupBoxes) {
       const groupKey = store.groupKeyByNode.get(node.id) ?? '';

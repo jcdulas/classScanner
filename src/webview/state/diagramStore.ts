@@ -464,6 +464,12 @@ export class DiagramStore {
     this.emit(['ui']);
   }
 
+  /** Shows a message in the banner above the diagram. */
+  showWarning(message: string): void {
+    this.failureMessage = message;
+    this.emit(['ui']);
+  }
+
   dismissFailure(): void {
     this.failureMessage = '';
     this.emit(['ui']);

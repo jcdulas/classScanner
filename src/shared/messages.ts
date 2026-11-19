@@ -18,7 +18,8 @@ export interface DiagramSettings {
   structuralRelations: RelationKind[];
 }
 
-export type ExportFormat = 'png' | 'svg';
+/** `schema` is the compact text for language models (src/webview/export/llmSchema.ts). */
+export type ExportFormat = 'png' | 'svg' | 'schema';
 
 /** `view`: what is visible on screen. `diagram`: the whole diagram. `selection`: the selected classes. */
 export type ExportScope = 'view' | 'diagram' | 'selection';
@@ -45,6 +46,7 @@ export type HostToWebviewMessage =
       settings: DiagramSettings;
     }
   | { type: 'exportRequest'; format: ExportFormat; scope: ExportScope; scale: number }
+  | { type: 'selectionRequest' }
   | { type: 'measurePerformance' };
 
 export type WebviewToHostMessage =
@@ -54,8 +56,13 @@ export type WebviewToHostMessage =
   | { type: 'rescan' }
   | { type: 'startExport' }
   | { type: 'showReport' }
-  /** PNG data is base64-encoded; SVG data is the SVG text. */
+  /** PNG data is base64-encoded; SVG and schema data are text. */
   | { type: 'exportResult'; format: ExportFormat; data: string }
+  | { type: 'selectionResult'; nodeIds: string[] }
+  /** `description` says what was copied, for the confirmation message. */
+  | { type: 'copyToClipboard'; text: string; description: string }
+  /** Asks the host to save the source files of these classes in a .zip archive. */
+  | { type: 'exportSources'; nodeIds: string[] }
   | { type: 'exportFailed'; message: string }
   | { type: 'diagramShown'; visibleNodeCount: number; layoutDurationMs: number }
   | { type: 'performanceResult'; statistics: FrameStatistics[] }

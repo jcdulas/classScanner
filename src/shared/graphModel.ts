@@ -49,6 +49,8 @@ export interface ClassNode {
   file: number;
   /** 1-based line of the declaration. */
   line: number;
+  /** Indexes in Graph.files of the other files that define methods of the class, usually .cpp files. */
+  definitionFiles?: number[];
   templateParams?: string[];
   /** Names of the template specializations, for example `Buffer<int>`. */
   specializations?: string[];

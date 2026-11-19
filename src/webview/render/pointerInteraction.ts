@@ -2,11 +2,12 @@
 //
 //   wheel                          zoom around the cursor
 //   drag on the background         pan
-//   Shift + drag on the background rectangle selection
+//   Ctrl/Cmd + drag anywhere       rectangle selection (replaces the selection; with Shift, adds to it)
+//   Shift + drag on the background rectangle selection, added to the current selection
 //   drag a card or a group title   move it (with the other selected cards)
 //   click a card                   select it (Shift: add or remove from the selection)
 //   click a member line            open the member's declaration
-//   Ctrl/Cmd + click a card        open the class declaration
+//   Ctrl/Cmd + click a card        open the class declaration (a click: the pointer did not move)
 //   double-click a card            cycle its display mode
 //   double-click a group title     collapse or expand the group
 //   right-click                    context menu
@@ -126,6 +127,12 @@ export class PointerInteraction {
     const { store } = this.context;
     const startWorld = this.context.camera.screenToWorld(pressed.startScreen);
     const target = pressed.target;
+    if (pressed.modifiers.command) {
+      // Ctrl + drag always draws a selection rectangle, even when it starts on a card.
+      this.gesture = { kind: 'rectangle', startWorld, isAdditive: pressed.modifiers.shift };
+      this.context.showSelectionRectangle(rectFromCorners(startWorld, world));
+      return;
+    }
     if (target?.kind === 'card') {
       if (!store.selection.has(target.id)) {
         store.select([target.id], pressed.modifiers.shift ? 'add' : 'replace');

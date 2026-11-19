@@ -241,6 +241,11 @@ class GraphBuilder {
       return;
     }
     addToSetMap(this.classIdsByFile, fileSymbols.file, ownerId);
+    const owner = this.nodesById.get(ownerId)!;
+    const fileIndex = this.fileIndexByPath.get(fileSymbols.file)!;
+    if (fileIndex !== owner.file) {
+      addUniqueNumber((owner.definitionFiles ??= []), fileIndex);
+    }
     // Inside `Engine::run`, names are looked up in the scope of class Engine first.
     const ownerScope = this.scopeOfClass(ownerId, definitionScope.templateParameters);
     this.addDependencies(ownerId, signatureTypes, bodyTypeNames, ownerScope, fileSymbols.usingNamespaces);
@@ -351,6 +356,12 @@ function addIfUnknown(members: Member[], member: Member, known: Set<string>): vo
 }
 
 function addUnique(values: string[], value: string): void {
+  if (!values.includes(value)) {
+    values.push(value);
+  }
+}
+
+function addUniqueNumber(values: number[], value: number): void {
   if (!values.includes(value)) {
     values.push(value);
   }

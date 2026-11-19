@@ -11,8 +11,11 @@ import { ScanCancelledError, createWorkerParseFunction } from '../scanner/parser
 import { ScanResult, scanFolder } from '../scanner/scanFolder';
 import { ExportFormat, ExportScope, FrameStatistics, HostToWebviewMessage, WebviewToHostMessage } from '../shared/messages';
 import { SavedDiagramState } from '../shared/savedState';
+import { collectSourceFiles } from '../model/sourceFiles';
+import { Graph } from '../shared/graphModel';
 import { readSettings } from './configuration';
 import { logScanReport } from './scanReportLog';
+import { ArchiveLayout, writeSourceArchive } from './sourceArchive';
 import { StateStore } from './stateStore';
 import { buildWebviewHtml } from './webviewHtml';
 
@@ -47,9 +50,10 @@ export class DiagramPanel {
   private pendingGraphMessage: HostToWebviewMessage | undefined;
   private pendingExport: PendingExport | undefined;
   private scanCancellation: vscode.CancellationTokenSource | undefined;
-  /** Files of the last graph sent; the webview refers to files by their index in this list. */
-  private lastGraphFiles: string[] = [];
+  /** The last graph sent; the webview refers to files by their index in `files`. */
+  private lastGraph: Graph | undefined;
   private pendingPerformanceMeasure: ((statistics: FrameStatistics[]) => void) | undefined;
+  private pendingSelectionRequest: ((nodeIds: string[]) => void) | undefined;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
@@ -134,6 +138,48 @@ export class DiagramPanel {
       this.pendingExport = { resolve, reject };
       this.post({ type: 'exportRequest', format, scope, scale });
     });
+  }
+
+  /** The qualified names of the classes selected in the diagram. */
+  requestSelection(): Promise<string[]> {
+    return new Promise((resolve) => {
+      this.pendingSelectionRequest = resolve;
+      this.post({ type: 'selectionRequest' });
+    });
+  }
+
+  /**
+   * Asks how to lay out the archive and where to save it, then saves the source files of the
+   * classes in a .zip archive (spec §4.7).
+   */
+  async exportSources(nodeIds: string[], layout?: ArchiveLayout): Promise<void> {
+    if (nodeIds.length === 0) {
+      void vscode.window.showInformationMessage('classScanner: select the classes whose sources to export first.');
+      return;
+    }
+    const chosenLayout = layout ?? (await askArchiveLayout());
+    if (chosenLayout === undefined) {
+      return;
+    }
+    const defaultFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? path.dirname(this.target.folder);
+    const target = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(path.join(defaultFolder, `${path.basename(this.target.folder)}-sources.zip`)),
+      filters: { 'Zip archive': ['zip'] },
+    });
+    if (target === undefined) {
+      return;
+    }
+    const fileCount = await this.writeSourceArchive(nodeIds, chosenLayout, target.fsPath);
+    void vscode.window.showInformationMessage(`classScanner: ${fileCount} source files saved to ${target.fsPath}`);
+  }
+
+  /** Writes the archive without asking anything. Returns the number of files written. */
+  async writeSourceArchive(nodeIds: string[], layout: ArchiveLayout, targetPath: string): Promise<number> {
+    if (this.lastGraph === undefined) {
+      throw new Error('The folder has not been scanned yet.');
+    }
+    const files = collectSourceFiles(this.lastGraph, nodeIds);
+    return writeSourceArchive(this.target.folder, files, layout, targetPath);
   }
 
   /** Asks the webview to measure frame times while panning (spec §8). Used by the integration tests. */
@@ -236,6 +282,20 @@ export class DiagramPanel {
         this.pendingExport?.reject(new Error(message.message));
         this.pendingExport = undefined;
         return;
+      case 'selectionResult':
+        this.pendingSelectionRequest?.(message.nodeIds);
+        this.pendingSelectionRequest = undefined;
+        return;
+      case 'copyToClipboard':
+        void vscode.env.clipboard.writeText(message.text).then(() => {
+          void vscode.window.showInformationMessage(`classScanner: ${message.description} copied to the clipboard.`);
+        });
+        return;
+      case 'exportSources':
+        this.exportSources(message.nodeIds).catch((error: unknown) => {
+          void vscode.window.showErrorMessage(`classScanner: the export failed. ${String(error)}`);
+        });
+        return;
       case 'performanceResult':
         this.pendingPerformanceMeasure?.(message.statistics);
         this.pendingPerformanceMeasure = undefined;
@@ -251,7 +311,7 @@ export class DiagramPanel {
   }
 
   private async openSource(fileIndex: number, line: number): Promise<void> {
-    const relativePath = this.lastGraphFiles[fileIndex];
+    const relativePath = this.lastGraph?.files[fileIndex];
     if (relativePath === undefined) {
       return;
     }
@@ -266,7 +326,7 @@ export class DiagramPanel {
 
   private post(message: HostToWebviewMessage): void {
     if (message.type === 'graph') {
-      this.lastGraphFiles = message.graph.files;
+      this.lastGraph = message.graph;
       if (!this.isWebviewReady) {
         this.pendingGraphMessage = message;
         return;
@@ -274,6 +334,15 @@ export class DiagramPanel {
     }
     void this.webviewPanel.webview.postMessage(message);
   }
+}
+
+async function askArchiveLayout(): Promise<ArchiveLayout | undefined> {
+  const choices: (vscode.QuickPickItem & { layout: ArchiveLayout })[] = [
+    { label: 'Keep the folder tree', description: 'inc/core/engine.h, src/core/engine.cpp', layout: 'tree' },
+    { label: 'Flat', description: 'every file at the root of the archive', layout: 'flat' },
+  ];
+  const choice = await vscode.window.showQuickPick(choices, { title: 'Layout of the .zip archive' });
+  return choice?.layout;
 }
 
 function panelTitle(folder: string): string {

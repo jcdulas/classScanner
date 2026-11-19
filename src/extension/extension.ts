@@ -9,6 +9,7 @@ import { ExportFormat, ExportScope, FrameStatistics } from '../shared/messages';
 import { DIAGRAM_VIEW_TYPE, DiagramPanel, PanelServices, ScanTarget } from './diagramPanel';
 import { readSettings } from './configuration';
 import { runExportFlow } from './exportFlow';
+import { ArchiveLayout } from './sourceArchive';
 
 const LAST_DEPTH_KEY = 'classScanner.lastDepth';
 const ACTIVE_CONTEXT_KEY = 'classScanner.diagramIsActive';
@@ -21,6 +22,8 @@ export interface ClassScannerApi {
   /** Export data of the active diagram: base64 PNG or SVG text. */
   exportActiveDiagram(format: ExportFormat, scope: ExportScope, scale: number): Promise<string>;
   measureActiveDiagramPerformance(): Promise<FrameStatistics[]>;
+  /** Saves the sources of the given classes of the active diagram; returns the number of files. */
+  exportActiveDiagramSources(nodeIds: string[], layout: ArchiveLayout, targetPath: string): Promise<number>;
 }
 
 /** The state VS Code keeps for a panel across restarts (set by the webview with `setState`). */
@@ -131,6 +134,12 @@ export function activate(context: vscode.ExtensionContext): ClassScannerApi {
         return Promise.reject(new Error('No active diagram'));
       }
       return activePanel.measurePerformance();
+    },
+    exportActiveDiagramSources: (nodeIds, layout, targetPath) => {
+      if (activePanel === undefined) {
+        return Promise.reject(new Error('No active diagram'));
+      }
+      return activePanel.writeSourceArchive(nodeIds, layout, targetPath);
     },
   };
 }

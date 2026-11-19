@@ -5,7 +5,8 @@
 // out/integration/ so that the rendering can be checked by eye.
 
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { unzipSync } from 'fflate';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import * as vscode from 'vscode';
 import type { ClassScannerApi } from '../../src/extension/extension';
@@ -60,6 +61,22 @@ async function testFixtureProject(api: ClassScannerApi): Promise<void> {
   assert.match(svg, /<svg[^>]+>/);
   assert.match(svg, /Scene/);
   await writeFile(path.join(OUTPUT_FOLDER, 'fixture-diagram.svg'), svg);
+
+  const schema = await api.exportActiveDiagram('schema', 'diagram', 1);
+  assert.match(schema, /abstract class Shape/);
+  assert.match(schema, /geo::Scene o-- geo::Layer \[\*\]/);
+  await writeFile(path.join(OUTPUT_FOLDER, 'fixture-schema.txt'), schema);
+
+  // Scene is declared in include/geometry/scene.h and its methods are defined in src/scene.cpp.
+  for (const [layout, expectedNames] of [
+    ['tree', ['include/geometry/scene.h', 'src/scene.cpp']],
+    ['flat', ['scene.h', 'scene.cpp']],
+  ] as const) {
+    const zipPath = path.join(OUTPUT_FOLDER, `fixture-sources-${layout}.zip`);
+    const fileCount = await api.exportActiveDiagramSources(['geo::Scene'], layout, zipPath);
+    assert.equal(fileCount, 2);
+    assert.deepEqual(Object.keys(unzipSync(await readFile(zipPath))).sort(), [...expectedNames].sort());
+  }
   console.log(`Fixture project shown, layout in ${Math.round(info.layoutDurationMs)} ms.`);
 }
 

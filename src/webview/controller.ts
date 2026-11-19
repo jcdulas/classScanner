@@ -2,6 +2,7 @@
 // store, the renderer and the user interface actions.
 
 import { ExportFormat, ExportScope, HostToWebviewMessage } from '../shared/messages';
+import { buildLlmSchema } from './export/llmSchema';
 import { buildSvg } from './export/svgExport';
 import { HostConnection } from './hostConnection';
 import { FontMetrics } from './model/cardGeometry';
@@ -66,6 +67,22 @@ export class DiagramController {
     this.renderer?.focusNode(id);
   }
 
+  /** Copies the schema of the selected classes, for a language model, to the clipboard. */
+  copySelectionAsSchema(): void {
+    try {
+      const text = this.buildSchema('selection');
+      const count = this.store.selection.size;
+      this.host.post({ type: 'copyToClipboard', text, description: `Schema of ${count} ${count === 1 ? 'class' : 'classes'}` });
+    } catch (error) {
+      this.store.showWarning(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /** Asks the extension host to save the source files of the selected classes in a .zip archive. */
+  exportSelectionSources(): void {
+    this.host.post({ type: 'exportSources', nodeIds: Array.from(this.store.selection) });
+  }
+
   fitToView(): void {
     this.renderer?.fitToView();
   }
@@ -95,6 +112,9 @@ export class DiagramController {
       case 'exportRequest':
         await this.handleExportRequest(message.format, message.scope, message.scale);
         return;
+      case 'selectionRequest':
+        this.host.post({ type: 'selectionResult', nodeIds: Array.from(this.store.selection) });
+        return;
       case 'measurePerformance':
         if (this.renderer !== undefined) {
           this.host.post({ type: 'performanceResult', statistics: await this.renderer.measurePerformance() });
@@ -106,7 +126,9 @@ export class DiagramController {
   private async handleExportRequest(format: ExportFormat, scope: ExportScope, scale: number): Promise<void> {
     try {
       let data: string;
-      if (format === 'svg') {
+      if (format === 'schema') {
+        data = this.buildSchema(scope === 'selection' ? 'selection' : 'diagram');
+      } else if (format === 'svg') {
         data = buildSvg(this.store, readTheme(), scope === 'selection' ? 'selection' : 'diagram');
       } else if (this.renderer === undefined) {
         throw new Error('The diagram is not ready yet.');
@@ -117,6 +139,20 @@ export class DiagramController {
     } catch (error) {
       this.host.post({ type: 'exportFailed', message: error instanceof Error ? error.message : String(error) });
     }
+  }
+
+  /** The schema of the selected classes, or of every visible class, with the active relations. */
+  private buildSchema(scope: 'selection' | 'diagram'): string {
+    const graph = this.store.graph;
+    if (graph === undefined) {
+      throw new Error('The diagram is not ready yet.');
+    }
+    const ids = scope === 'selection' ? Array.from(this.store.selection) : Array.from(this.store.visibleNodeIds);
+    if (ids.length === 0) {
+      throw new Error(scope === 'selection' ? 'No class is selected.' : 'No class is visible.');
+    }
+    const projectName = graph.root.split(/[\\/]/).filter((part) => part !== '').pop() ?? graph.root;
+    return buildLlmSchema(graph, ids, { projectName, relationKinds: this.store.activeRelations });
   }
 
   // ---- Persistence ----

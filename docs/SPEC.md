@@ -2,7 +2,7 @@
 
 A VS Code extension that scans a folder of C++ sources and displays an interactive class diagram in WebGL, designed to stay smooth and readable beyond 1000 classes.
 
-Status: specification v1, before implementation.
+Status: specification v1, implemented. Sections 8 and 11 give the measured results.
 
 ## 1. Scope
 
@@ -14,6 +14,7 @@ Status: specification v1, before implementation.
 - A WebGL diagram (PixiJS v8) with semantic zoom, three layouts and collapsible groups.
 - Classes can be dragged with the mouse; the arrangement is saved in the workspace.
 - Navigation: go to source, search, filters, neighborhood focus, minimap, PNG/SVG export.
+- Exports of the selected classes: a compact text schema for language models, and their source files in a `.zip` archive.
 
 ### Out of scope for v1
 
@@ -113,7 +114,8 @@ Rules:
 
 - Template arguments are explored: `std::map<Key, std::shared_ptr<Value>>` produces one relation to `Key` and one to `Value`.
 - A dependency from A to B is not created when an inheritance, composition or aggregation from A to B already exists.
-- Edges of the same type between the same two classes are deduplicated; the multiplicity (`1`, `*`) is kept for composition and aggregation.
+- Edges of the same type between the same two classes are deduplicated; for composition and aggregation, a `*` multiplicity wins over `1`.
+- Edges from a class to itself are dropped.
 - Dependencies found in `.cpp` bodies are attached to the class that owns the method. Code in free functions is ignored.
 
 ## 4. Diagram
@@ -121,9 +123,11 @@ Rules:
 ### 4.1 Rendering
 
 - PixiJS v8 (WebGL2) in a VS Code webview.
-- Text uses an MSDF bitmap font, sharp at every zoom level.
-- Viewport culling backed by a spatial index; text objects are recycled (pool) and exist only for visible cards at a level of detail that displays them.
-- Edges are drawn in batches, one batch per relation type: toggling a type shows or hides one batch.
+- Text uses PixiJS bitmap fonts generated at startup from the editor font, at 32 px so that text stays sharp when zooming in. (MSDF fonts were considered; they need a font file prepared at build time, which rules out using the user's editor font.)
+- Viewport culling backed by a spatial index (Flatbush); text objects exist only for the cards on screen at a level of detail that displays text, and are destroyed when the card leaves the screen.
+- Edges are drawn in batches, one batch per relation type. Turning a type off hides its batch; turning it on shows the batch, redrawing it only if the view changed in the meantime.
+- Edges are built for an area larger than the view and rebuilt when the camera stops after leaving that area or zooming by more than 30%.
+- Dashed and dotted lines are drawn dash by dash. A batch that would need more than 20,000 dashes is drawn with solid lines instead.
 
 ### 4.2 Style
 
@@ -135,13 +139,13 @@ Rules:
 
 Three levels of detail, driven by the zoom:
 
-| Level | Zoom | Card content |
-|---|---|---|
-| Overview | far | Colored rectangle, no text; group names only |
-| Compact | intermediate | Class name, enlarged to fill the card, and type badge |
-| Full | close | Header, attributes, methods with signatures |
+| Level | Zoom (screen pixels per diagram unit) | Card in `auto` mode | Pinned `compact` | Pinned `full` |
+|---|---|---|---|---|
+| Overview | below 0.2 | Colored rectangle; group names only | Colored rectangle | Colored rectangle |
+| Compact | 0.2 to 0.55 | Class name, enlarged to fill the card | Class name, enlarged | All members |
+| Full | 0.55 and above | Header, attributes, methods (capped) | Header only | All members |
 
-Each class has a display mode: `auto` (default, follows the zoom), `compact` or `full` (pinned, independent of the zoom). Pinning is done with a double-click, the context menu, or on the whole selection. Two global buttons force everything to compact or to full; a third one returns to `auto`.
+Each class has a display mode: `auto` (default, follows the zoom), `compact` or `full` (pinned). At the Overview level every card is a plain rectangle whatever its mode: text would not be readable there. Pinning is done with a double-click, the context menu, or on the whole selection. Two global buttons force everything to compact or to full; a third one returns to `auto`.
 
 Card footprint in the layout:
 
@@ -155,18 +159,21 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 
 | Layout | Description | Engine |
 |---|---|---|
-| Grouped (default) | Collapsible groups; inside each group, layers that follow inheritance; groups are then placed relative to each other | elkjs |
+| Grouped (default) | Collapsible groups; inside each group, layers that follow the structural relations; groups are then packed next to each other | elkjs (layered, then rectpacking) |
 | Global hierarchy | A single layered layout, base classes at the top | elkjs (layered) |
-| Organic | Force simulation, strongly linked classes move closer | d3-force |
+| Organic | Force simulation, strongly linked classes move closer; classes of a group start close together | d3-force |
 
 - Grouping criterion to choose from: namespace (default), folder, file, none.
+- Group boxes and collapsing exist in the grouped layout only. In the other layouts the classes of a group are scattered, so the group only shows as the header color of its cards.
 - A collapsed group becomes a single node showing its name and its number of classes.
 - The layout only uses the relation types checked as "structural" (default: inheritance and composition), so that enabling dependencies does not disrupt the arrangement.
+- The global hierarchy, and groups of more than 300 classes in the grouped layout, are layered by inheritance only. With composition as well, a dense project gives chains hundreds of layers deep (measured: 20 s of computation and a diagram 3 million units tall, against 0.7 s with inheritance only).
 - Switching layout animates the transition. Each layout keeps its own manual positions.
+- "Recompute layout" computes the current layout again: it reclaims the room freed by compact cards and discards the manual positions of that layout.
 
 ### 4.5 Edge readability at scale
 
-- When a group is collapsed, or at the Overview level, the edges between two groups merge into a single link whose thickness reflects the number of relations. Hovering shows the count per type.
+- When a group is collapsed, or at the Overview level of the grouped layout, the edges between two groups merge into a single link whose thickness grows with the logarithm of the number of relations. Hovering shows the count per type.
 - Individual edges appear from the Compact level on, for expanded groups.
 - Edges whose two ends are outside the viewport are not drawn.
 - Selecting a class brings its edges to the front and dims the others.
@@ -176,13 +183,20 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 | Action | Effect |
 |---|---|
 | Mouse wheel, drag on the background | Zoom centered on the cursor, pan |
-| Drag a card or a group | Move; multiple selection with Shift+click or a rectangle |
-| Click on a class | Selection and neighborhood focus: its relations are highlighted, the rest is dimmed |
+| Ctrl+drag (Cmd on macOS), anywhere | Rectangle selection of several classes; with Shift, added to the selection |
+| Shift+drag on the background | Rectangle selection added to the selection |
+| Drag a card or a group title | Moves it, with the other selected cards |
+| Click on a class | Selection and neighborhood focus: its relations are highlighted, the rest is dimmed. Shift+click adds or removes a class |
+| Click on a group title | Selects the classes of the group |
 | "Isolate" (context menu) | Shows only the class and its neighbors up to N levels (N adjustable from 1 to 5) |
 | Ctrl+click on a class, click on a member | Opens the file at the declaration line in the editor |
 | Double-click on a card | Cycles the mode `auto` → `full` → `compact` |
-| Double-click on a group | Collapses or expands the group |
+| Double-click on a group title | Collapses or expands the group |
+| Right-click | Context menu: display modes, isolate, go to source, exports of the selection, collapse the group |
 | Ctrl+F | Search by name (substring, case-insensitive), animated recentering on the result |
+| Escape | Closes the menu, then clears the selection, then leaves the isolation |
+
+A tooltip shows the qualified name of a card when its text is not readable, and the counts of a merged link.
 
 Collapsible side panel:
 
@@ -198,6 +212,14 @@ Minimap in a corner: overview of the groups, draggable viewport rectangle.
 - PNG: current view or whole diagram, with a scale factor. The whole diagram is rendered in tiles when it exceeds the maximum texture size.
 - SVG: generated from the model (not from a WebGL capture), selectable text, whole diagram or selection.
 - The export respects the current filters, active relations and display modes.
+
+Exports of the selected classes, from the "Export Diagram" command or the context menu:
+
+- **Schema for a language model**: compact text, close to C++ declarations, that can be pasted into a prompt. Classes are grouped by namespace, each with its bases, members, and file and line; the active relations follow, one line each (`A *-- B`, `A o-- B`, `A ..> B`...), split between relations inside the selection and relations leaving it. A legend at the top explains the notation. It is copied to the clipboard or saved as a Markdown file. The same schema can be exported for every visible class.
+- **Sources as a `.zip` archive**, either keeping the folder tree of the scanned folder or flat (every file at the root; files with the same name get their folders in their name, `core/util.h` → `core_util.h`). The files of a class are:
+  - the file that declares it;
+  - the files that define its methods outside the class, found by the scan;
+  - its companion files: same name with another extension, next to it or in a mirror tree under another top folder (`inc/core/engine.h` and `src/core/engine.cpp`), a common layout where headers and sources are kept apart.
 
 ## 5. Architecture
 
@@ -220,8 +242,13 @@ Messages between the two sides:
 | host → webview | `graph` | Complete graph, scan report, saved arrangement |
 | host → webview | `scanProgress` | Scan progress |
 | webview → host | `openSource` | File, line |
-| webview → host | `saveLayout` | Arrangement, sent after 1 s without changes |
-| webview → host | `rescan`, `export` | Rescan request; data to write to disk |
+| webview → host | `saveState` | Arrangement, sent after 1 s without changes |
+| webview → host | `rescan`, `startExport` | Rescan request; opens the export choices |
+| host → webview | `exportRequest` | Format (`png`, `svg`, `schema`), scope, scale |
+| webview → host | `exportResult` | Base64 PNG, SVG text or schema text |
+| webview → host | `exportSources`, `copyToClipboard` | Classes whose sources to archive; text to copy |
+
+The complete list is in `src/shared/messages.ts`.
 
 Data model sent to the webview:
 
@@ -239,6 +266,7 @@ interface ClassNode {
   kind: 'class' | 'struct' | 'union' | 'enum';
   namespace: string;
   file: number; line: number;   // declaration
+  definitionFiles?: number[];   // other files that define its methods (.cpp)
   templateParams?: string[];
   specializations?: string[];
   isAbstract: boolean;
@@ -269,7 +297,8 @@ interface Edge {
 - File `.classscanner/<folder-name>-<short hash of the path>.json` at the workspace root, readable and suitable for version control.
 - Content: scan parameters (folder, depth), active layout and grouping criterion, positions per layout (indexed by qualified name), pinned display modes, collapsed groups, active relations, filters, camera.
 - After a rescan: known classes get their position back; new ones are placed near their group; entries of classes that disappeared are removed.
-- "Reset layout" clears the manual positions of the current layout.
+- "Recompute layout" (§4.4) discards the manual positions of the current layout.
+- Outside of a workspace, the file is stored in the extension's global storage instead.
 
 ## 7. Configuration
 
@@ -287,23 +316,28 @@ interface Edge {
 
 Reference machine: recent development laptop, integrated GPU. Reference project: 1500 classes, 2000 files, 10,000 edges.
 
-| Operation | Target |
-|---|---|
-| Complete scan | under 15 s |
-| Computing a layout | under 5 s, without blocking the interface |
-| Display after layout | under 1 s |
-| Pan and zoom | 60 frames/s |
-| Toggling a relation type | under 100 ms |
-| Search | result in under 50 ms |
-| Webview memory | under 500 MB |
+The measurements were made on the synthetic project of the test suite (`npm run generate:synthetic`: 1500 classes, 2000 files, about 24,000 edges, which is denser than the reference project), with `npm run benchmark` and `npm run test:integration` in VS Code 1.130.0.
+
+| Operation | Target | Measured |
+|---|---|---|
+| Complete scan | under 15 s | 0.9 to 1.7 s |
+| Computing a layout | under 5 s, without blocking the interface | grouped 1.4 s, global hierarchy 0.4 s, organic 1.6 s |
+| Display after layout | under 1 s | not measured on its own: 1.6 to 1.9 s from the start of the scan to the diagram on screen, scan and layout included |
+| Pan and zoom | 60 frames/s | 57 to 60 frames/s at the three levels of detail, every relation type active |
+| Toggling a relation type | under 100 ms | 4 to 18 ms to turn off, 16 to 28 ms to turn on with a batch to redraw |
+| Search | result in under 50 ms | not measured (a linear scan of 1500 names) |
+| Webview memory | under 500 MB | not measured |
 
 ## 9. Tests
 
-- A corpus of C++ test files covering each construct (multiple inheritance, templates, nested classes, export macros, `#if`) with the expected graph, checked by unit tests of the extractor.
-- A synthetic project generator (N classes, adjustable relation density) to measure the targets of §8.
-- Manual validation on a real, large open-source project.
+- **Unit tests** (`npm test`, vitest): a corpus of C++ files covering each construct (multiple inheritance, templates, nested classes, export macros, `#if`...) in `test/fixtures/constructs`, a small multi-file project in `test/fixtures/project`, and tests of name resolution, relations, card geometry, layouts, the webview store, the schema and the source file collection.
+- **Integration tests** (`npm run test:integration`): run the extension in VS Code 1.130.0 (or another version with `--vscode-version`), scan the fixture project, check that the webview reports the diagram on screen without error, check the saved arrangement, and export PNG, SVG, schema and `.zip` files to `out/integration/`. On the synthetic project they also measure frame times and relation toggle times.
+- **Benchmark** (`npm run benchmark`): scan and layout times on the synthetic project.
+- Not automated: mouse interactions (drag, rectangle selection, context menu) and validation on a real, large open-source project.
 
 ## 10. Milestones
+
+All six milestones are implemented.
 
 1. **Scan and model**: file discovery, tree-sitter extraction, relation resolution, scan report, extractor tests.
 2. **Minimal diagram**: webview, PixiJS rendering of cards and inheritance edges, grouped layout, pan and zoom.
@@ -312,8 +346,10 @@ Reference machine: recent development laptop, integrated GPU. Reference project:
 5. **Arrangement**: manual moves, persistence, hierarchy and organic layouts, collapsible groups.
 6. **Finishing**: minimap, PNG and SVG export, themes, measuring and meeting the performance targets, `.vsix` packaging.
 
-## 11. Points to validate with a prototype
+Added after the first version: rectangle selection with Ctrl+drag, schema for language models, sources as a `.zip` archive.
 
-- **Card footprint** (§4.3): reserving the capped full footprint keeps the arrangement stable while zooming, but spreads the diagram out. To be confirmed visually on a large project as early as milestone 3; the alternative is a compact footprint with full cards drawn as overlays.
-- **elkjs at 1500 nodes**: computation time of the grouped layout, to be measured at milestone 2. Fallback: one layout per group, then placing the groups with a custom packing algorithm.
-- **Export macros**: rate of missed classes on a real project without any `ignoredMacros` configuration.
+## 11. Points that were to be validated with a prototype
+
+- **Card footprint** (§4.3): implemented as specified (capped full footprint in `auto` mode). It keeps the arrangement stable while zooming. Whether the diagram feels too spread out on a real project is still to be judged by eye; the alternative is a compact footprint with full cards drawn as overlays.
+- **elkjs at 1500 nodes**: measured, see §8. The grouped layout uses the planned fallback from the start (one layout per group, then packing with ELK's `rectpacking`). The layered algorithm does not scale with dense composition, hence the inheritance-only rule of §4.4.
+- **Export macros**: the automatic removal works on the fixture corpus. The rate of missed classes on a real project without any `ignoredMacros` configuration has not been measured.
