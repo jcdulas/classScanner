@@ -4,10 +4,11 @@
 //   drag on the background         pan
 //   Ctrl/Cmd + drag anywhere       rectangle selection (replaces the selection; with Shift, adds to it)
 //   Shift + drag on the background rectangle selection, added to the current selection
-//   drag a card or a group title   move it (with the other selected cards)
-//   click a card                   select it (Shift: add or remove from the selection)
+//   drag a card or a group title   move it; dragging a selected card moves the whole selection
+//   click a card                   select it alone
+//   Ctrl/Cmd + click a card        add it to the selection, or remove it (Shift + click does the same)
 //   click a member line            open the member's declaration
-//   Ctrl/Cmd + click a card        open the class declaration (a click: the pointer did not move)
+//   Alt + click a card             open the class declaration
 //   double-click a card            cycle its display mode
 //   double-click a group title     collapse or expand the group
 //   right-click                    context menu
@@ -41,6 +42,7 @@ interface Modifiers {
   shift: boolean;
   /** Ctrl on Windows and Linux, Cmd on macOS. */
   command: boolean;
+  alt: boolean;
 }
 
 type Gesture =
@@ -86,7 +88,7 @@ export class PointerInteraction {
         kind: 'pressed',
         startScreen: this.screenPoint(event),
         target: this.context.hitTest(this.worldPoint(event)),
-        modifiers: { shift: event.shiftKey, command: event.ctrlKey || event.metaKey },
+        modifiers: { shift: event.shiftKey, command: event.ctrlKey || event.metaKey, alt: event.altKey },
       };
     } else {
       return;
@@ -175,19 +177,21 @@ export class PointerInteraction {
       store.clearSelection();
       return;
     }
+    // Ctrl or Shift keeps the current selection and changes it; a plain click replaces it.
+    const keepsSelection = pressed.modifiers.command || pressed.modifiers.shift;
     if (target.kind !== 'card') {
-      store.select(this.context.groupMemberIds(target.key), pressed.modifiers.shift ? 'add' : 'replace');
+      store.select(this.context.groupMemberIds(target.key), keepsSelection ? 'add' : 'replace');
       return;
     }
     const node = store.nodeById.get(target.id);
     if (node === undefined) {
       return;
     }
-    if (pressed.modifiers.command) {
+    if (pressed.modifiers.alt) {
       this.context.openSource(node.file, node.line);
       return;
     }
-    if (pressed.modifiers.shift) {
+    if (keepsSelection) {
       store.select([target.id], 'toggle');
       return;
     }

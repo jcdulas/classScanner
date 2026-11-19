@@ -115,6 +115,36 @@
           await wait(900);
         }
       },
+      // Ctrl + click two cards, then drag the first one 200 pixels to the right: both must move.
+      multiDrag: async () => {
+        const host = document.querySelector('.diagram-host');
+        const first = { x: host.clientWidth * 0.52, y: host.clientHeight * 0.29 };
+        const second = { x: host.clientWidth * 0.59, y: host.clientHeight * 0.51 };
+        for (const point of [first, second]) {
+          mouse('pointerdown', point.x, point.y, { ctrlKey: true });
+          mouse('pointerup', point.x, point.y, { ctrlKey: true });
+          await wait(100);
+        }
+        dragRectangle(first.x, first.y, first.x + 200, first.y, {});
+      },
+      // Ctrl + click a card twice: selected, then unselected.
+      ctrlClickTwice: async () => {
+        const host = document.querySelector('.diagram-host');
+        const point = { x: host.clientWidth * 0.52, y: host.clientHeight * 0.29 };
+        for (let count = 0; count < 2; count++) {
+          mouse('pointerdown', point.x, point.y, { ctrlKey: true });
+          mouse('pointerup', point.x, point.y, { ctrlKey: true });
+          await wait(150);
+        }
+      },
+      // Select cards with a rectangle, then open the panel of the "LLM schema" button.
+      schemaPanel: async () => {
+        const host = document.querySelector('.diagram-host');
+        dragRectangle(host.clientWidth * 0.42, host.clientHeight * 0.25, host.clientWidth * 0.7, host.clientHeight * 0.75, { ctrlKey: true });
+        await wait(300);
+        const button = Array.from(document.querySelectorAll('.selection-bar .glass-button')).find((element) => element.textContent.includes('LLM schema'));
+        button.click();
+      },
       // Type the `text` URL parameter in the search box.
       search: async () => {
         const input = document.querySelector('.search-field input');

@@ -14,8 +14,10 @@ import {
   DisplayMode,
   GroupingKind,
   LayoutKind,
+  DEFAULT_SCHEMA_DETAIL,
   Point,
   SavedDiagramState,
+  SchemaDetail,
   createDefaultState,
 } from '../../shared/savedState';
 import { LayoutInput, PackingInput } from '../layout/layoutTypes';
@@ -40,6 +42,8 @@ export type ChangeTopic =
   | 'camera'
   /** The options that say what changes when the view is zoomed out. */
   | 'zoomOptions'
+  /** The detail options of the schema for language models. */
+  | 'schemaOptions'
   /** User interface only: phase, search, menus, panels. */
   | 'ui';
 
@@ -83,7 +87,7 @@ const MAX_UNDO_STEPS = 50;
 
 type Listener = (change: StoreChange) => void;
 
-const PERSISTED_TOPICS: ChangeTopic[] = ['positions', 'cards', 'relations', 'visibility', 'groups', 'camera', 'zoomOptions'];
+const PERSISTED_TOPICS: ChangeTopic[] = ['positions', 'cards', 'relations', 'visibility', 'groups', 'camera', 'zoomOptions', 'schemaOptions'];
 
 export class DiagramStore {
   // ---- Data received from the extension host ----
@@ -106,6 +110,8 @@ export class DiagramStore {
   simplifyCardsWhenZoomedOut = true;
   /** When true, the relations between two groups merge into one link at the overview level. */
   mergeRelationsWhenZoomedOut = false;
+  /** How much detail the schema for language models contains (spec §4.7). */
+  schemaDetail: SchemaDetail = DEFAULT_SCHEMA_DETAIL;
 
   // ---- Derived data, recomputed when its inputs change ----
   cardLayouts = new Map<string, CardLayout>();
@@ -642,6 +648,11 @@ export class DiagramStore {
     this.emit(['zoomOptions', 'ui']);
   }
 
+  setSchemaDetail(detail: Partial<SchemaDetail>): void {
+    this.schemaDetail = { ...this.schemaDetail, ...detail };
+    this.emit(['schemaOptions', 'ui']);
+  }
+
   setLevelOfDetail(level: LevelOfDetail): void {
     if (level !== this.levelOfDetail) {
       this.levelOfDetail = level;
@@ -696,6 +707,7 @@ export class DiagramStore {
       camera: this.camera,
       simplifyCardsWhenZoomedOut: this.simplifyCardsWhenZoomedOut,
       mergeRelationsWhenZoomedOut: this.mergeRelationsWhenZoomedOut,
+      schemaDetail: this.schemaDetail,
     };
   }
 
@@ -717,6 +729,7 @@ export class DiagramStore {
     this.camera = state.camera;
     this.simplifyCardsWhenZoomedOut = state.simplifyCardsWhenZoomedOut ?? true;
     this.mergeRelationsWhenZoomedOut = state.mergeRelationsWhenZoomedOut ?? false;
+    this.schemaDetail = { ...DEFAULT_SCHEMA_DETAIL, ...state.schemaDetail };
   }
 
   // ---------------------------------------------------------------------------

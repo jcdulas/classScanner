@@ -5,6 +5,7 @@
 import { DisplayMode } from '../../shared/savedState';
 import { DiagramController } from '../controller';
 import { GlassButton, Segmented, SegmentOption } from './controls';
+import { SchemaButton } from './SchemaButton';
 import { useStore } from './useStore';
 
 const DISPLAY_OPTIONS: SegmentOption[] = [
@@ -39,7 +40,7 @@ export function SelectionBar({ controller }: SelectionBarProps) {
           <GlassButton icon="code" label="Source" title="Open the declaration" onPress={() => controller.openSource(single.file, single.line)} />
         </>
       )}
-      <GlassButton icon="copy" label="LLM schema" title="Copy a compact description of the selection, for a language model" onPress={() => controller.copySelectionAsSchema()} />
+      <SchemaButton controller={controller} />
       <GlassButton icon="archive" label="Sources" title="Save the source files of the selection in a .zip archive" onPress={() => controller.exportSelectionSources()} />
       <GlassButton icon="close" title="Clear the selection (Escape)" onPress={() => store.clearSelection()} />
     </div>

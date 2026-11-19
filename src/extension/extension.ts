@@ -6,6 +6,7 @@
 
 import * as vscode from 'vscode';
 import { ExportFormat, ExportScope, FrameStatistics } from '../shared/messages';
+import { SchemaDetail } from '../shared/savedState';
 import { DIAGRAM_VIEW_TYPE, DiagramPanel, PanelServices, ScanTarget } from './diagramPanel';
 import { readSettings } from './configuration';
 import { runExportFlow } from './exportFlow';
@@ -21,7 +22,7 @@ export interface ClassScannerApi {
   onWebviewError: vscode.Event<string>;
   scanFolder(folder: string, depth: number): Promise<void>;
   /** Export data of the active diagram: base64 PNG or SVG text. */
-  exportActiveDiagram(format: ExportFormat, scope: ExportScope, scale: number): Promise<string>;
+  exportActiveDiagram(format: ExportFormat, scope: ExportScope, scale: number, schemaDetail?: SchemaDetail): Promise<string>;
   measureActiveDiagramPerformance(): Promise<FrameStatistics[]>;
   /** Saves the sources of the given classes of the active diagram; returns the number of files. */
   exportActiveDiagramSources(nodeIds: string[], layout: ArchiveLayout, targetPath: string): Promise<number>;
@@ -137,11 +138,11 @@ export function activate(context: vscode.ExtensionContext): ClassScannerApi {
     onDiagramShown: diagramShown.event,
     onWebviewError: webviewError.event,
     scanFolder: (folder, depth) => openDiagram({ folder, depth }),
-    exportActiveDiagram: (format, scope, scale) => {
+    exportActiveDiagram: (format, scope, scale, schemaDetail) => {
       if (activePanel === undefined) {
         return Promise.reject(new Error('No active diagram'));
       }
-      return activePanel.requestExport(format, scope, scale);
+      return activePanel.requestExport(format, scope, scale, schemaDetail);
     },
     measureActiveDiagramPerformance: () => {
       if (activePanel === undefined) {

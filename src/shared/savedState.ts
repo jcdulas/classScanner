@@ -36,6 +36,18 @@ export interface DiagramFilters {
   showExternal: boolean;
 }
 
+/** Which members a schema for language models lists (spec §4.7). */
+export type SchemaMemberLevel = 'all' | 'nonPrivate' | 'public' | 'none';
+
+/** How much detail a schema for language models contains. Less detail makes a shorter prompt. */
+export interface SchemaDetail {
+  members: SchemaMemberLevel;
+  /** Write the file and line of each class. */
+  includeLocations: boolean;
+}
+
+export const DEFAULT_SCHEMA_DETAIL: SchemaDetail = { members: 'all', includeLocations: true };
+
 export interface SavedDiagramState {
   version: 1;
   layout: LayoutKind;
@@ -56,6 +68,8 @@ export interface SavedDiagramState {
    */
   simplifyCardsWhenZoomedOut?: boolean;
   mergeRelationsWhenZoomedOut?: boolean;
+  /** Detail of the schema for language models, as last chosen in the diagram. Optional for older files. */
+  schemaDetail?: SchemaDetail;
 }
 
 /** The file written by the extension host also remembers how the folder was scanned. */

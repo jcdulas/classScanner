@@ -9,6 +9,9 @@
 - An include is drawn once between the main classes of the two files, instead of between all their classes.
 - Search also finds methods and attributes; Ctrl+Enter opens a result in the editor.
 - The diagram scans again when a C++ file of its folder is saved (setting `classScanner.rescanOnSave`).
+- Ctrl + click adds a class to the selection or removes it; Alt + click now opens the class declaration.
+- The schema for an LLM can be made lighter (without private members, public members only, no members, without file locations), with an estimate of its size in tokens.
+- The source archive finds the .cpp file of a header in more project layouts, such as `include/myproject/x.h` with `src/x.cpp`.
 - The scan depth is asked the first time only; the new "Change Scan Depth" command and the Depth button change it.
 
 - Thinner relation lines, arrow heads and diamonds.

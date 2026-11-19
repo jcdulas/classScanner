@@ -10,7 +10,7 @@ import * as vscode from 'vscode';
 import { ScanCancelledError, createWorkerParseFunction } from '../scanner/parserPool';
 import { ScanResult, scanFolder } from '../scanner/scanFolder';
 import { ExportFormat, ExportScope, FrameStatistics, HostToWebviewMessage, WebviewToHostMessage } from '../shared/messages';
-import { SavedDiagramState } from '../shared/savedState';
+import { SavedDiagramState, SchemaDetail } from '../shared/savedState';
 import { collectSourceFiles } from '../model/sourceFiles';
 import { Graph } from '../shared/graphModel';
 import { readSettings } from './configuration';
@@ -171,12 +171,12 @@ export class DiagramPanel {
     }
   }
 
-  /** Asks the webview for export data: base64 PNG or SVG text. */
-  requestExport(format: ExportFormat, scope: ExportScope, scale: number): Promise<string> {
+  /** Asks the webview for export data: base64 PNG, SVG text or schema text. */
+  requestExport(format: ExportFormat, scope: ExportScope, scale: number, schemaDetail?: SchemaDetail): Promise<string> {
     this.pendingExport?.reject(new Error('Replaced by a newer export'));
     return new Promise((resolve, reject) => {
       this.pendingExport = { resolve, reject };
-      this.post({ type: 'exportRequest', format, scope, scale });
+      this.post({ type: 'exportRequest', format, scope, scale, schemaDetail });
     });
   }
 

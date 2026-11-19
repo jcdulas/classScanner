@@ -67,6 +67,11 @@ async function testFixtureProject(api: ClassScannerApi): Promise<void> {
   assert.match(schema, /abstract class Shape/);
   assert.match(schema, /geo::Scene o-- geo::Layer \[\*\]/);
   await writeFile(path.join(OUTPUT_FOLDER, 'fixture-schema.txt'), schema);
+  // The lightest schema: no members, no file locations.
+  const lightSchema = await api.exportActiveDiagram('schema', 'diagram', 1, { members: 'none', includeLocations: false });
+  assert.match(lightSchema, /\n  abstract class Shape\n/);
+  assert.doesNotMatch(lightSchema, /shape\.h|origin: Point/);
+  assert.ok(lightSchema.length < schema.length, 'The light schema is shorter');
 
   // Scene is declared in include/geometry/scene.h and its methods are defined in src/scene.cpp.
   for (const [layout, expectedNames] of [

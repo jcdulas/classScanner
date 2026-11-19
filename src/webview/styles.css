@@ -243,6 +243,35 @@ body {
   background: color-mix(in srgb, var(--vscode-editorWidget-background) 92%, transparent);
 }
 
+/* A popover that opens above its button, for the bars at the bottom of the view. */
+.popover-up {
+  top: auto;
+  bottom: calc(100% + 12px);
+}
+
+.schema-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 300px;
+  padding: 12px;
+}
+
+.panel-caption {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.schema-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .menu-item {
   display: flex;
   align-items: center;

@@ -5,9 +5,13 @@
 //   - the files that define its methods outside the class (usually .cpp files),
 //     found by the scan;
 //   - its "companion" files: files with the same name and another extension,
-//     either next to it (`core/engine.h` and `core/engine.cpp`) or in a mirror
-//     tree under another top folder (`inc/core/engine.h` and `src/core/engine.cpp`),
-//     a common layout where headers and sources are kept apart.
+//     such as `engine.cpp` for `engine.h`.
+//
+// Headers and sources are often kept in separate trees, so a companion is not
+// always next to its file. When several files have the right name, the one
+// whose folders resemble most those of the file wins:
+//   `inc/core/engine.h`           and `src/core/engine.cpp`   (mirror trees)
+//   `include/myproject/engine.h`  and `src/engine.cpp`        (an extra folder level)
 
 import path from 'node:path';
 import { Graph } from '../shared/graphModel';
@@ -59,45 +63,68 @@ export function zipEntryNames(relativePaths: string[], layout: 'tree' | 'flat'):
   return names;
 }
 
+/** Score of two files in the same folder: better than any number of common folders. */
+const SAME_FOLDER = Number.MAX_SAFE_INTEGER;
+
 class CompanionFinder {
-  /** `core/engine.h` and `core/engine.cpp` share the key `core/engine`. */
-  private readonly filesBySameFolderKey = new Map<string, string[]>();
-  /** `inc/core/engine.h` and `src/core/engine.cpp` share the mirror key `core/engine`. */
-  private readonly filesByMirrorKey = new Map<string, string[]>();
+  /** Files by name without extension: `engine` for `src/core/engine.cpp`. */
+  private readonly filesByStem = new Map<string, string[]>();
 
   constructor(files: string[]) {
     for (const file of files) {
-      addToListMap(this.filesBySameFolderKey, withoutExtension(file), file);
-      const mirrorKey = mirrorKeyOf(file);
-      if (mirrorKey !== undefined) {
-        addToListMap(this.filesByMirrorKey, mirrorKey, file);
-      }
+      const stem = stemOf(file);
+      const sameStem = this.filesByStem.get(stem) ?? [];
+      sameStem.push(file);
+      this.filesByStem.set(stem, sameStem);
     }
   }
 
+  /**
+   * The companions of a file. Two files are companions when each one is the best match of
+   * the other: `src/core/util.cpp` goes with `inc/core/util.h`, so it is not also taken as
+   * the companion of `inc/net/util.h`.
+   */
   find(file: string): string[] {
-    const companions = [...(this.filesBySameFolderKey.get(withoutExtension(file)) ?? [])];
-    const mirrorKey = mirrorKeyOf(file);
-    if (mirrorKey !== undefined) {
-      companions.push(...(this.filesByMirrorKey.get(mirrorKey) ?? []));
+    return this.bestMatches(file).filter((candidate) => this.bestMatches(candidate).includes(file));
+  }
+
+  /**
+   * The files with the same name and another extension whose folders resemble most those of
+   * `file`. Without any folder in common, a file is only kept when it is the only candidate.
+   */
+  private bestMatches(file: string): string[] {
+    const extension = path.posix.extname(file);
+    const candidates = (this.filesByStem.get(stemOf(file)) ?? []).filter((candidate) => path.posix.extname(candidate) !== extension);
+    if (candidates.length === 0) {
+      return [];
     }
-    return companions.filter((companion) => companion !== file);
+    const scores = candidates.map((candidate) => folderResemblance(file, candidate));
+    const bestScore = Math.max(...scores);
+    const best = candidates.filter((_, index) => scores[index] === bestScore);
+    return bestScore === 0 && best.length > 1 ? [] : best;
   }
 }
 
-function withoutExtension(file: string): string {
-  const extension = path.posix.extname(file);
-  return extension === '' ? file : file.slice(0, -extension.length);
+/** The number of folders the two paths have in common, counted from the file upward. */
+function folderResemblance(first: string, second: string): number {
+  const firstFolders = path.posix.dirname(first).split('/');
+  const secondFolders = path.posix.dirname(second).split('/');
+  if (firstFolders.join('/') === secondFolders.join('/')) {
+    return SAME_FOLDER;
+  }
+  let common = 0;
+  while (
+    common < firstFolders.length &&
+    common < secondFolders.length &&
+    firstFolders[firstFolders.length - 1 - common] === secondFolders[secondFolders.length - 1 - common]
+  ) {
+    common++;
+  }
+  return common;
 }
 
-/** The path without its top folder and extension, or undefined for a file at the root. */
-function mirrorKeyOf(file: string): string | undefined {
-  const separator = file.indexOf('/');
-  return separator === -1 ? undefined : withoutExtension(file.slice(separator + 1));
-}
-
-function addToListMap(map: Map<string, string[]>, key: string, value: string): void {
-  const list = map.get(key) ?? [];
-  list.push(value);
-  map.set(key, list);
+function stemOf(file: string): string {
+  const baseName = path.posix.basename(file);
+  const extension = path.posix.extname(baseName);
+  return extension === '' ? baseName : baseName.slice(0, -extension.length);
 }

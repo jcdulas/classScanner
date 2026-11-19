@@ -2,7 +2,8 @@
 // store, the renderer and the user interface actions.
 
 import { ExportFormat, ExportScope, HostToWebviewMessage } from '../shared/messages';
-import { buildLlmSchema } from './export/llmSchema';
+import { SchemaDetail } from '../shared/savedState';
+import { buildLlmSchema, estimateTokenCount } from './export/llmSchema';
 import { buildSvg } from './export/svgExport';
 import { HostConnection } from './hostConnection';
 import { FontMetrics } from './model/cardGeometry';
@@ -74,11 +75,20 @@ export class DiagramController {
   /** Copies the schema of the selected classes, for a language model, to the clipboard. */
   copySelectionAsSchema(): void {
     try {
-      const text = this.buildSchema('selection');
+      const text = this.buildSchema('selection', this.store.schemaDetail);
       const count = this.store.selection.size;
       this.host.post({ type: 'copyToClipboard', text, description: `Schema of ${count} ${count === 1 ? 'class' : 'classes'}` });
     } catch (error) {
       this.store.showWarning(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /** A rough size, in tokens, of the schema of the selection with the current detail options. */
+  estimateSelectionSchemaTokens(): number | undefined {
+    try {
+      return estimateTokenCount(this.buildSchema('selection', this.store.schemaDetail));
+    } catch {
+      return undefined;
     }
   }
 
@@ -114,7 +124,7 @@ export class DiagramController {
         await this.store.loadGraph(message.graph, message.report, message.savedState, message.settings);
         return;
       case 'exportRequest':
-        await this.handleExportRequest(message.format, message.scope, message.scale);
+        await this.handleExportRequest(message.format, message.scope, message.scale, message.schemaDetail ?? this.store.schemaDetail);
         return;
       case 'selectionRequest':
         this.host.post({ type: 'selectionResult', nodeIds: Array.from(this.store.selection) });
@@ -127,11 +137,11 @@ export class DiagramController {
     }
   }
 
-  private async handleExportRequest(format: ExportFormat, scope: ExportScope, scale: number): Promise<void> {
+  private async handleExportRequest(format: ExportFormat, scope: ExportScope, scale: number, schemaDetail: SchemaDetail): Promise<void> {
     try {
       let data: string;
       if (format === 'schema') {
-        data = this.buildSchema(scope === 'selection' ? 'selection' : 'diagram');
+        data = this.buildSchema(scope === 'selection' ? 'selection' : 'diagram', schemaDetail);
       } else if (format === 'svg') {
         data = buildSvg(this.store, readTheme(), scope === 'selection' ? 'selection' : 'diagram');
       } else if (this.renderer === undefined) {
@@ -146,7 +156,7 @@ export class DiagramController {
   }
 
   /** The schema of the selected classes, or of every visible class, with the active relations. */
-  private buildSchema(scope: 'selection' | 'diagram'): string {
+  private buildSchema(scope: 'selection' | 'diagram', detail: SchemaDetail): string {
     const graph = this.store.graph;
     if (graph === undefined) {
       throw new Error('The diagram is not ready yet.');
@@ -156,7 +166,7 @@ export class DiagramController {
       throw new Error(scope === 'selection' ? 'No class is selected.' : 'No class is visible.');
     }
     const projectName = graph.root.split(/[\\/]/).filter((part) => part !== '').pop() ?? graph.root;
-    return buildLlmSchema(graph, ids, { projectName, relationKinds: this.store.activeRelations });
+    return buildLlmSchema(graph, ids, { projectName, relationKinds: this.store.activeRelations, detail });
   }
 
   // ---- Persistence ----

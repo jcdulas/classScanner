@@ -5,6 +5,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import * as vscode from 'vscode';
 import { ExportFormat, ExportScope } from '../shared/messages';
+import { SchemaDetail, SchemaMemberLevel } from '../shared/savedState';
 import { DiagramPanel } from './diagramPanel';
 
 /** `format: 'sources'` is the .zip archive of source files, which the host builds itself. */
@@ -64,7 +65,11 @@ async function exportSchema(panel: DiagramPanel, scope: ExportScope): Promise<vo
   if (destination === undefined) {
     return;
   }
-  const text = await panel.requestExport('schema', scope, 1);
+  const schemaDetail = await askSchemaDetail();
+  if (schemaDetail === undefined) {
+    return;
+  }
+  const text = await panel.requestExport('schema', scope, 1, schemaDetail);
   if (destination.startsWith('Copy')) {
     await vscode.env.clipboard.writeText(text);
     void vscode.window.showInformationMessage('classScanner: schema copied to the clipboard.');
@@ -73,6 +78,32 @@ async function exportSchema(panel: DiagramPanel, scope: ExportScope): Promise<vo
   // A Markdown code block keeps the indentation when the file is shown or pasted elsewhere.
   const markdown = '```text\n' + text + '```\n';
   await saveToFile(panel, Buffer.from(markdown, 'utf8'), `${path.basename(panel.folder)}-schema.md`, { Markdown: ['md'] });
+}
+
+interface MemberLevelChoice extends vscode.QuickPickItem {
+  members: SchemaMemberLevel;
+}
+
+const MEMBER_LEVEL_CHOICES: MemberLevelChoice[] = [
+  { label: 'All members', members: 'all' },
+  { label: 'Without private members', description: 'Shorter', members: 'nonPrivate' },
+  { label: 'Public members only', description: 'Shorter', members: 'public' },
+  { label: 'Classes and relations only', description: 'Shortest', members: 'none' },
+];
+
+/** Asks how much detail the schema contains: less detail makes a shorter prompt (spec §4.7). */
+async function askSchemaDetail(): Promise<SchemaDetail | undefined> {
+  const level = await vscode.window.showQuickPick(MEMBER_LEVEL_CHOICES, { title: 'Schema for an LLM: members to list' });
+  if (level === undefined) {
+    return undefined;
+  }
+  const locations = await vscode.window.showQuickPick(['With file locations', 'Without file locations'], {
+    title: 'Schema for an LLM: file and line of each class',
+  });
+  if (locations === undefined) {
+    return undefined;
+  }
+  return { members: level.members, includeLocations: locations.startsWith('With file') };
 }
 
 async function saveToFile(panel: DiagramPanel, content: Buffer, defaultName: string, filters: Record<string, string[]>): Promise<void> {

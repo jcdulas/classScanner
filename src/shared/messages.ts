@@ -4,7 +4,7 @@
 // the receiver narrow a message to its exact shape with a switch statement.
 
 import { Graph, RelationKind, ScanReport } from './graphModel';
-import { SavedDiagramState } from './savedState';
+import { SavedDiagramState, SchemaDetail } from './savedState';
 
 /** Written into the webview page by the extension host, read by the webview at startup. */
 export interface WebviewBootConfig {
@@ -45,7 +45,8 @@ export type HostToWebviewMessage =
       savedState: SavedDiagramState | undefined;
       settings: DiagramSettings;
     }
-  | { type: 'exportRequest'; format: ExportFormat; scope: ExportScope; scale: number }
+  /** `schemaDetail` is only used by the `schema` format; without it the webview uses its own setting. */
+  | { type: 'exportRequest'; format: ExportFormat; scope: ExportScope; scale: number; schemaDetail?: SchemaDetail }
   | { type: 'selectionRequest' }
   | { type: 'measurePerformance' };
 

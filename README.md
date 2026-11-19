@@ -51,11 +51,11 @@ Select classes and take them elsewhere:
 | Mouse wheel | Zoom around the cursor |
 | Drag the background | Pan |
 | Click a card | Select it and highlight its relations |
-| Shift + click a card | Add it to the selection, or remove it |
+| Ctrl + click a card (Cmd on macOS) | Add it to the selection, or remove it; Shift + click does the same |
 | Ctrl + drag (Cmd on macOS) | Select the cards in a rectangle; with Shift, add them to the selection |
-| Drag a card or a group title | Move it, together with the other selected cards |
+| Drag a card or a group title | Move it; dragging a selected card moves the whole selection |
 | Click a member line | Open the member's declaration |
-| Ctrl + click a card | Open the class declaration |
+| Alt + click a card | Open the class declaration |
 | Double-click a card | Cycle its display mode: auto, full, compact |
 | Double-click a group title | Collapse or expand the group |
 | Right-click | Display modes, isolate, go to source, exports, collapse the group |
@@ -83,7 +83,9 @@ While a diagram is open, saving a C++ file of its folder scans it again: the dia
 
 ### Schema for an LLM
 
-**Copy schema for an LLM** (selection bar or right-click) puts a compact description of the selected classes on the clipboard: classes by namespace with their bases, members and file locations, then the relations that are turned on, with a legend.
+The **LLM schema** button of the selection bar copies a compact description of the selected classes to the clipboard: classes by namespace with their bases, members and file locations, then the relations that are turned on, with a legend.
+
+Because the size of a prompt matters, the button first shows two options and an estimate of the size in tokens: which members to list (all, without the private ones, public only, or none) and whether to write the file locations.
 
 ```text
 namespace geo
@@ -99,7 +101,7 @@ relations
 
 ### Sources as a .zip
 
-**Export sources as .zip** saves the files of the selected classes, keeping the folder tree or flat. For each class it takes the file that declares it, the files that define its methods, and the files with the same name next to it or in a mirror tree, so `inc/core/engine.h` brings `src/core/engine.cpp` with it.
+**Export sources as .zip** saves the files of the selected classes, keeping the folder tree or flat. For each class it takes the file that declares it, the files that define its methods, and the files with the same name in the folder that resembles its own the most: `inc/core/engine.h` brings `src/core/engine.cpp` with it, and `include/myproject/engine.h` brings `src/engine.cpp`.
 
 ### Saved arrangement
 

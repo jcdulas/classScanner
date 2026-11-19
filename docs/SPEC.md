@@ -202,11 +202,12 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 | Mouse wheel, drag on the background | Zoom centered on the cursor, pan |
 | Ctrl+drag (Cmd on macOS), anywhere | Rectangle selection of several classes; with Shift, added to the selection |
 | Shift+drag on the background | Rectangle selection added to the selection |
-| Drag a card or a group title | Moves it, with the other selected cards |
-| Click on a class | Selection and neighborhood focus: its relations are highlighted, the rest is dimmed. Shift+click adds or removes a class |
+| Drag a card or a group title | Moves it. Dragging a selected card moves the whole selection |
+| Click on a class | Selects it alone, with neighborhood focus: its relations are highlighted, the rest is dimmed |
+| Ctrl+click on a class (Cmd on macOS), or Shift+click | Adds the class to the selection, or removes it |
 | Click on a group title | Selects the classes of the group |
 | "Isolate" (context menu) | Shows only the class and its neighbors up to N levels (N adjustable from 1 to 5) |
-| Ctrl+click on a class, click on a member | Opens the file at the declaration line in the editor |
+| Click on a member, Alt+click on a class | Opens the file at the declaration line in the editor |
 | Double-click on a card | Cycles the mode `auto` → `full` → `compact` |
 | Double-click on a group title | Collapses or expands the group |
 | Right-click | Context menu: display modes, isolate, go to source, exports of the selection, collapse the group |
@@ -242,10 +243,12 @@ The diagram fills the whole view; the user interface floats above it:
 Exports of the selected classes, from the "Export Diagram" command or the context menu:
 
 - **Schema for a language model**: compact text, close to C++ declarations, that can be pasted into a prompt. Classes are grouped by namespace, each with its bases, members, and file and line; the active relations follow, one line each (`A *-- B`, `A o-- B`, `A ..> B`...), split between relations inside the selection and relations leaving it. A legend at the top explains the notation. It is copied to the clipboard or saved as a Markdown file. The same schema can be exported for every visible class.
+  - The size of a prompt matters, so the schema can be made lighter: all members, without private members, public members only, or no member at all (classes and relations only); and with or without the file and line of each class. When members are left out, the header of the schema says so.
+  - The "LLM schema" button of the selection bar opens a panel with these two options and an estimate of the size in tokens (about one token for four characters), updated as the options change. The options are saved with the arrangement. The "Export Diagram" command asks for them.
 - **Sources as a `.zip` archive**, either keeping the folder tree of the scanned folder or flat (every file at the root; files with the same name get their folders in their name, `core/util.h` → `core_util.h`). The files of a class are:
   - the file that declares it;
   - the files that define its methods outside the class, found by the scan;
-  - its companion files: same name with another extension, next to it or in a mirror tree under another top folder (`inc/core/engine.h` and `src/core/engine.cpp`), a common layout where headers and sources are kept apart.
+  - its companion files: files with the same name and another extension. Headers and sources are often kept in separate trees, so when several files have the right name, the one whose folders resemble most those of the file wins, counting the folders they have in common from the file upward: `inc/core/engine.h` goes with `src/core/engine.cpp` (mirror trees), and `include/myproject/engine.h` with `src/engine.cpp` (an extra folder level). Two files are companions only when each is the best match of the other; without any folder in common, a file is only taken when it is the only candidate.
 
 ## 5. Architecture
 

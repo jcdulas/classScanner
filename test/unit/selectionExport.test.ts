@@ -4,7 +4,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { collectSourceFiles, zipEntryNames } from '../../src/model/sourceFiles';
 import { ClassNode, Graph } from '../../src/shared/graphModel';
-import { buildLlmSchema } from '../../src/webview/export/llmSchema';
+import { DEFAULT_SCHEMA_DETAIL, SchemaDetail } from '../../src/shared/savedState';
+import { buildLlmSchema, estimateTokenCount } from '../../src/webview/export/llmSchema';
 import { FIXTURES_DIRECTORY, scanTestFolder } from './testHelpers';
 
 function makeNode(id: string, file: number, definitionFiles?: number[]): ClassNode {
@@ -54,6 +55,28 @@ describe('source files of classes', () => {
     expect(collectSourceFiles(sideBySide, ['Engine'])).toEqual(['core/engine.cpp', 'core/engine.h']);
   });
 
+  const graphOf = (files: string[]): Graph => ({ root: '/project', files, nodes: [makeNode('Engine', 0)], edges: [] });
+
+  it('finds the .cpp file when the header tree has an extra folder level', () => {
+    const extraLevel = graphOf(['include/myproject/engine.h', 'src/engine.cpp', 'src/other.cpp']);
+    expect(collectSourceFiles(extraLevel, ['Engine'])).toEqual(['include/myproject/engine.h', 'src/engine.cpp']);
+  });
+
+  it('prefers the file whose folders resemble most those of the header', () => {
+    const severalCandidates = graphOf(['include/myproject/core/engine.h', 'src/core/engine.cpp', 'src/net/engine.cpp']);
+    expect(collectSourceFiles(severalCandidates, ['Engine'])).toEqual(['include/myproject/core/engine.h', 'src/core/engine.cpp']);
+  });
+
+  it('takes no companion when several files match equally and share no folder', () => {
+    const ambiguous = graphOf(['inc/engine.h', 'src/engine.cpp', 'tests/engine.cpp']);
+    expect(collectSourceFiles(ambiguous, ['Engine'])).toEqual(['inc/engine.h']);
+  });
+
+  it('takes other headers with the same name, such as inline files', () => {
+    const inlineFile = graphOf(['core/engine.h', 'core/engine.inl', 'core/engine.cpp']);
+    expect(collectSourceFiles(inlineFile, ['Engine'])).toEqual(['core/engine.cpp', 'core/engine.h', 'core/engine.inl']);
+  });
+
   it('records the definition files during the scan', async () => {
     const { graph: scanned } = await scanTestFolder(path.join(FIXTURES_DIRECTORY, 'project'));
     const scene = scanned.nodes.find((node) => node.id === 'geo::Scene')!;
@@ -80,6 +103,7 @@ describe('schema for language models', () => {
     const schema = buildLlmSchema(graph, ['geo::Shape', 'geo::Circle', 'geo::Polygon', 'geo::Point'], {
       projectName: 'project',
       relationKinds: new Set(['inherit', 'compose', 'depend']),
+      detail: DEFAULT_SCHEMA_DETAIL,
     });
     const body = schema.split('\n').filter((line) => !line.startsWith('#') && line !== '');
     expect(body).toEqual([
@@ -109,6 +133,63 @@ describe('schema for language models', () => {
 
   it('refuses an empty selection', () => {
     const graph: Graph = { root: '/p', files: [], nodes: [], edges: [] };
-    expect(() => buildLlmSchema(graph, [], { projectName: 'p', relationKinds: new Set() })).toThrow('No class to export.');
+    expect(() => buildLlmSchema(graph, [], { projectName: 'p', relationKinds: new Set(), detail: DEFAULT_SCHEMA_DETAIL })).toThrow(
+      'No class to export.',
+    );
+  });
+
+  describe('lighter schemas', () => {
+    const shapeLines = async (detail: SchemaDetail) => {
+      const { graph } = await scanTestFolder(path.join(FIXTURES_DIRECTORY, 'project'));
+      const schema = buildLlmSchema(graph, ['geo::Shape', 'geo::Circle'], { projectName: 'project', relationKinds: new Set(), detail });
+      return schema.split('\n').filter((line) => line !== '');
+    };
+
+    it('leaves out private members and says so', async () => {
+      const lines = await shapeLines({ members: 'nonPrivate', includeLocations: true });
+      expect(lines).toContain('# Private members are left out.');
+      expect(lines).toContain('    # origin: Point');
+      expect(lines).not.toContain('    - radius: double');
+    });
+
+    it('lists public members only', async () => {
+      const lines = await shapeLines({ members: 'public', includeLocations: true });
+      expect(lines).toContain('# Only public members are listed.');
+      expect(lines).not.toContain('    # origin: Point');
+      expect(lines).toContain('    + virtual area() const: double = 0');
+    });
+
+    it('lists classes and relations only, without the legend of members', async () => {
+      const lines = await shapeLines({ members: 'none', includeLocations: true });
+      expect(lines.some((line) => line.startsWith('# Members: +'))).toBe(false);
+      expect(lines.filter((line) => !line.startsWith('#'))).toEqual([
+        'namespace geo',
+        '  class Circle : public geo::Shape  [include/geometry/shape.h:25]',
+        '  abstract class Shape  [include/geometry/shape.h:15]',
+      ]);
+    });
+
+    it('leaves out the file locations', async () => {
+      const lines = await shapeLines({ members: 'none', includeLocations: false });
+      expect(lines.filter((line) => !line.startsWith('#'))).toEqual([
+        'namespace geo',
+        '  class Circle : public geo::Shape',
+        '  abstract class Shape',
+      ]);
+    });
+
+    it('gets shorter with each option, on a whole project', async () => {
+      const { graph } = await scanTestFolder(path.join(FIXTURES_DIRECTORY, 'project'));
+      const everyClass = graph.nodes.map((node) => node.id);
+      const sizeOf = async (detail: SchemaDetail) =>
+        estimateTokenCount(buildLlmSchema(graph, everyClass, { projectName: 'project', relationKinds: new Set(), detail }));
+      const complete = await sizeOf({ members: 'all', includeLocations: true });
+      const withoutPrivate = await sizeOf({ members: 'nonPrivate', includeLocations: true });
+      const publicOnly = await sizeOf({ members: 'public', includeLocations: true });
+      const classesOnly = await sizeOf({ members: 'none', includeLocations: false });
+      expect(withoutPrivate).toBeLessThan(complete);
+      expect(publicOnly).toBeLessThan(withoutPrivate);
+      expect(classesOnly).toBeLessThan(publicOnly);
+    });
   });
 });
