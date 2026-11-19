@@ -23,6 +23,13 @@ Status: specification v1, before implementation.
 - Editing code from the diagram.
 - Languages other than C++.
 
+### Compatibility
+
+- The extension must work on VS Code 1.130.0 and later: `engines.vscode` is `^1.130.0` in `package.json`.
+- `@types/vscode` is pinned to the newest published version that is not newer than 1.130.0 (`1.125.0`: no `1.130.x` version of the package exists), so that using a recent API fails at compile time.
+- Extension tests run against VS Code 1.130.0 in addition to the current stable version.
+- The extension host code and the webview code only use the Node and browser features available in the runtimes bundled with VS Code 1.130.0.
+
 ### Code and documentation requirements
 
 - Everything is written in English: code, comments, documentation, UI text, commit messages.

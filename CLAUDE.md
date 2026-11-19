@@ -33,11 +33,14 @@ These are decided in the spec; do not replace them without asking.
 
 | Area | Choice |
 |---|---|
+| Minimum VS Code version | 1.130.0 (`engines.vscode: ^1.130.0`, `@types/vscode` pinned to `1.125.0`, the newest version not newer than 1.130.0) |
 | Language | TypeScript |
 | C++ parsing | `web-tree-sitter` with the `tree-sitter-cpp` grammar, in `worker_threads` |
 | Rendering | PixiJS v8 (WebGL2) in a webview |
 | Layout | elkjs and d3-force, in a web worker |
 | Webview UI | Preact |
+
+Do not use a VS Code API, Node feature or browser feature that is missing from VS Code 1.130.0, even if it works in the locally installed version.
 
 ## Architecture
 
