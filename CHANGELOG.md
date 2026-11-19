@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- New extension icon, in the flat style of VS Code.
+
 ## 0.1.3
 
 - Checking or unchecking a "Show" filter (classes, structs, unions, enums, templates, forward-declared only) computes the layout again: hidden classes leave no hole. Like "Recompute layout", this discards the manual moves and can be undone with Ctrl + Z.
