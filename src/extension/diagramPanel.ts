@@ -21,6 +21,9 @@ import { buildWebviewHtml } from './webviewHtml';
 
 export const DIAGRAM_VIEW_TYPE = 'classScanner.diagram';
 
+/** Delay between the save of a file and the automatic scan, to group several saves in one scan. */
+const RESCAN_DELAY_MS = 1000;
+
 export interface ScanTarget {
   folder: string;
   depth: number;
@@ -54,6 +57,7 @@ export class DiagramPanel {
   private lastGraph: Graph | undefined;
   private pendingPerformanceMeasure: ((statistics: FrameStatistics[]) => void) | undefined;
   private pendingSelectionRequest: ((nodeIds: string[]) => void) | undefined;
+  private rescanTimer: NodeJS.Timeout | undefined;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
@@ -74,6 +78,7 @@ export class DiagramPanel {
         }
       }),
       webviewPanel.onDidDispose(() => this.dispose()),
+      vscode.workspace.onDidSaveTextDocument((document) => this.onDocumentSaved(document)),
     );
   }
 
@@ -95,15 +100,46 @@ export class DiagramPanel {
     return this.target.folder;
   }
 
+  get depth(): number {
+    return this.target.depth;
+  }
+
+  /**
+   * Scans again shortly after a C++ file of the scanned folder is saved (spec §2.1), unless
+   * the setting classScanner.rescanOnSave is off. Several saves in a row give one scan.
+   */
+  private onDocumentSaved(document: vscode.TextDocument): void {
+    const settings = readSettings();
+    if (!settings.rescanOnSave || document.uri.scheme !== 'file') {
+      return;
+    }
+    const relativePath = path.relative(this.target.folder, document.uri.fsPath);
+    const isInsideFolder = relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
+    const extensions = settings.extensions.map((extension) => extension.toLowerCase());
+    if (!isInsideFolder || !extensions.includes(path.extname(relativePath).toLowerCase())) {
+      return;
+    }
+    const folderDepth = relativePath.split(path.sep).length - 1;
+    if (this.target.depth >= 0 && folderDepth > this.target.depth) {
+      return; // The file is deeper than the scan goes.
+    }
+    clearTimeout(this.rescanTimer);
+    this.rescanTimer = setTimeout(() => void this.scan(undefined, true), RESCAN_DELAY_MS);
+  }
+
   reveal(): void {
     this.webviewPanel.reveal();
   }
 
-  /** Runs a complete scan, then sends the graph to the webview (spec §2.1). */
-  async scan(newDepth?: number): Promise<void> {
+  /**
+   * Runs a complete scan, then sends the graph to the webview (spec §2.1). An automatic scan
+   * (after a file was saved) shows its progress in the status bar and stays quiet on failure.
+   */
+  async scan(newDepth?: number, isAutomatic = false): Promise<void> {
     if (newDepth !== undefined) {
       this.target = { ...this.target, depth: newDepth };
     }
+    clearTimeout(this.rescanTimer);
     this.scanCancellation?.cancel();
     const cancellation = new vscode.CancellationTokenSource();
     this.scanCancellation = cancellation;
@@ -111,7 +147,9 @@ export class DiagramPanel {
 
     try {
       const result = await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'classScanner', cancellable: true },
+        isAutomatic
+          ? { location: vscode.ProgressLocation.Window, title: 'classScanner: scanning' }
+          : { location: vscode.ProgressLocation.Notification, title: 'classScanner', cancellable: true },
         (progress, progressToken) => {
           progressToken.onCancellationRequested(() => cancellation.cancel());
           return this.runScan(progress, cancellation.token);
@@ -127,7 +165,9 @@ export class DiagramPanel {
       const message = error instanceof Error ? error.message : String(error);
       this.services.output.appendLine(`Scan failed: ${message}`);
       this.post({ type: 'scanFailed', message });
-      void vscode.window.showErrorMessage(`classScanner: the scan failed. ${message}`);
+      if (!isAutomatic) {
+        void vscode.window.showErrorMessage(`classScanner: the scan failed. ${message}`);
+      }
     }
   }
 
@@ -191,6 +231,7 @@ export class DiagramPanel {
   }
 
   dispose(): void {
+    clearTimeout(this.rescanTimer);
     this.scanCancellation?.cancel();
     this.pendingExport?.reject(new Error('The diagram was closed'));
     for (const disposable of this.disposables) {
@@ -273,6 +314,9 @@ export class DiagramPanel {
         return;
       case 'showReport':
         this.services.output.show(true);
+        return;
+      case 'changeDepth':
+        void vscode.commands.executeCommand('classScanner.changeDepth');
         return;
       case 'exportResult':
         this.pendingExport?.resolve(message.data);

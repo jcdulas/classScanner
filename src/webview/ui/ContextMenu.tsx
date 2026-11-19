@@ -46,12 +46,12 @@ export function ContextMenu({ controller }: ContextMenuProps) {
     );
     if (store.hasGroupBoxes) {
       const groupKey = store.groupKeyByNode.get(node.id) ?? '';
-      items.push('separator', { label: 'Collapse group', icon: 'collapse', action: () => store.toggleGroupCollapsed(groupKey) });
+      items.push('separator', { label: 'Collapse group', icon: 'collapse', action: () => void store.toggleGroupCollapsed(groupKey) });
     }
   } else if (menu.groupKey !== undefined) {
     const groupKey = menu.groupKey;
     const label = store.collapsedGroups.has(groupKey) ? 'Expand group' : 'Collapse group';
-    items.push({ label, icon: 'collapse', action: () => store.toggleGroupCollapsed(groupKey) });
+    items.push({ label, icon: 'collapse', action: () => void store.toggleGroupCollapsed(groupKey) });
   } else {
     items.push({ label: 'Fit to view', icon: 'fit', action: () => controller.fitToView() });
   }

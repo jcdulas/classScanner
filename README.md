@@ -22,7 +22,7 @@ Zoom out and each class becomes a colored tile in its namespace; zoom in and nam
 
 ### Every relation, on demand
 
-Seven kinds of relations, each with its own switch and its UML notation: inheritance, composition, aggregation, dependency, include, friend and nesting. Select a class to highlight its neighbors, or isolate its neighborhood to hide everything else.
+Seven kinds of relations, each with its own switch and its UML notation: inheritance, composition, aggregation, dependency, include, friend and nesting. Edges are thin, run horizontally and vertically, and leave each card from its own spot. Select a class to highlight its neighbors, or isolate its neighborhood to hide everything else.
 
 ![Members, visibility and relations up close](docs/images/detail.png)
 
@@ -32,7 +32,7 @@ Classes, structs, unions, enums and templates, with their members, visibility, a
 
 ### Layouts you can shape
 
-Group classes by namespace, folder or file, switch to one global inheritance hierarchy, or let an organic layout pull related classes together. Drag cards where you want them: the arrangement is saved with your workspace.
+Group classes by namespace, folder or file, switch to one global inheritance hierarchy, or let an organic layout pull related classes together. Related groups are placed side by side, and a collapsed group gives its room back. Drag cards where you want them: the arrangement is saved with your workspace, and every change can be undone.
 
 ### Exports for people and for language models
 
@@ -59,16 +59,17 @@ Select classes and take them elsewhere:
 | Double-click a card | Cycle its display mode: auto, full, compact |
 | Double-click a group title | Collapse or expand the group |
 | Right-click | Display modes, isolate, go to source, exports, collapse the group |
-| Ctrl + F | Search a class |
+| Ctrl + F | Search a class, a method or an attribute |
+| Ctrl + Z, Ctrl + Y | Undo and redo moves, display modes, collapsed groups and layout changes |
 | Escape | Close the menu, clear the selection, then leave the isolation |
 
 The controls float above the diagram:
 
-- **Top left**: show or hide the side panel, and search.
+- **Top left**: show or hide the side panel, search, undo and redo.
 - **Top center**: the layout, the grouping, **Recompute layout**, and the display mode of every card (auto follows the zoom, compact shows names only, full shows all members).
 - **Top right**: rescan and export.
 - **Side panel**: a switch per relation kind, what changes when zoomed out, the isolation depth, and filters by kind, namespace and folder.
-- **Bottom**: the status and the scan report on the left, zoom controls and the minimap on the right.
+- **Bottom**: the status, the scan depth and the scan report on the left, zoom controls and the minimap on the right.
 - **Selection bar**: appears while classes are selected, with the actions that apply to them.
 
 Two switches of the side panel, under **Zoomed out**, set what happens when you zoom out:
@@ -76,7 +77,9 @@ Two switches of the side panel, under **Zoomed out**, set what happens when you 
 - **Simplify cards** (on by default): cards show their name, then a plain tile. Turn it off to keep full cards at every zoom level.
 - **Merge relations** (off by default): every relation stays drawn. Turn it on to merge the relations between two groups into a single link when the view is far away.
 
-**Recompute layout** lays the diagram out again. It reclaims the room left by cards made compact, and discards the manual moves of the current layout.
+**Recompute layout** lays the diagram out again. It reclaims the room left by cards made compact, and discards the manual moves of the current layout; like every change of the arrangement, it can be undone with Ctrl + Z.
+
+While a diagram is open, saving a C++ file of its folder scans it again: the diagram follows your code, and keeps its arrangement. The depth of a folder is asked the first time only; click **Depth** in the status to change it.
 
 ### Schema for an LLM
 
@@ -108,19 +111,21 @@ Positions, pinned cards, collapsed groups, active relations, filters and the cam
 |---|---|
 | **classScanner: Scan Folder for C++ Classes** | Scans a folder and opens its diagram |
 | **classScanner: Rescan** | Scans the folder of the active diagram again |
+| **classScanner: Change Scan Depth** | Asks for another depth and scans the active diagram again |
 | **classScanner: Export Diagram** | Exports images, the schema for an LLM, or the sources of the selection |
 
 ## Settings
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `classScanner.maxDepth` | `-1` | Depth suggested on the first scan |
+| `classScanner.maxDepth` | `-1` | Depth suggested the first time a folder is scanned |
 | `classScanner.extensions` | `[".cpp", ".hpp", ".h"]` | File extensions to analyze |
 | `classScanner.exclude` | `build`, `out`, `node_modules`, `.git`, `third_party`, `external` | Glob patterns of files and folders to skip |
 | `classScanner.maxFileSizeKB` | `2048` | Larger files are skipped and listed in the scan report |
 | `classScanner.ignoredMacros` | `[]` | Macros removed before parsing, such as `Q_OBJECT` or `DECLARE_DYNAMIC` |
 | `classScanner.maxMembersInAutoMode` | `12` | Member lines shown on a card that follows the zoom |
 | `classScanner.structuralRelations` | `["inherit", "compose"]` | Relations used to compute the layout |
+| `classScanner.rescanOnSave` | `true` | Scan again when a C++ file of an open diagram is saved |
 
 ## Accuracy and limits
 

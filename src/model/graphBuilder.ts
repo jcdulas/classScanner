@@ -293,23 +293,46 @@ class GraphBuilder {
   private addIncludeEdges(): void {
     const includeResolver = new IncludeResolver(this.fileSymbolsList.map((symbols) => symbols.file));
     for (const fileSymbols of this.fileSymbolsList) {
-      const sourceIds = this.classIdsByFile.get(fileSymbols.file);
-      if (sourceIds === undefined) {
+      const sourceId = this.mainClassOfFile(fileSymbols.file, this.classIdsByFile.get(fileSymbols.file));
+      if (sourceId === undefined) {
         continue;
       }
       for (const include of fileSymbols.includes) {
         const includedFile = includeResolver.resolve(fileSymbols.file, include.path);
-        const targetIds = includedFile === undefined ? undefined : this.declaredClassIdsByFile.get(includedFile);
-        if (targetIds === undefined) {
+        if (includedFile === undefined) {
           continue;
         }
-        for (const sourceId of sourceIds) {
-          for (const targetId of targetIds) {
-            this.edges.add(sourceId, targetId, 'include');
-          }
+        const targetId = this.mainClassOfFile(includedFile, this.declaredClassIdsByFile.get(includedFile));
+        if (targetId !== undefined) {
+          this.edges.add(sourceId, targetId, 'include');
         }
       }
     }
+  }
+
+  /**
+   * The class that stands for a file in include relations (spec §3). An include is a relation
+   * between two files: drawing it between every class of one file and every class of the
+   * other would add many edges that say nothing more. The main class is the one named like
+   * the file (`scene.h` and `Scene`), otherwise the first class that is not nested in another.
+   */
+  private mainClassOfFile(file: string, classIds: Set<string> | undefined): string | undefined {
+    if (classIds === undefined || classIds.size === 0) {
+      return undefined;
+    }
+    const ids = Array.from(classIds);
+    const baseName = file.slice(file.lastIndexOf('/') + 1).replace(/\.[^.]*$/, '');
+    const normalize = (name: string) => name.toLowerCase().replace(/_/g, '');
+    const namedLikeFile = ids.find((id) => normalize(this.nodesById.get(id)!.name) === normalize(baseName));
+    if (namedLikeFile !== undefined) {
+      return namedLikeFile;
+    }
+    const isNested = (id: string) => {
+      const node = this.nodesById.get(id)!;
+      const nameInNamespace = node.namespace === '' ? id : id.slice(node.namespace.length + 2);
+      return nameInNamespace.includes('::');
+    };
+    return ids.find((id) => !isNested(id)) ?? ids[0];
   }
 
   // ---- Helpers ----

@@ -18,11 +18,12 @@ import {
   SavedDiagramState,
   createDefaultState,
 } from '../../shared/savedState';
-import { LayoutInput } from '../layout/layoutTypes';
+import { LayoutInput, PackingInput } from '../layout/layoutTypes';
 import { CardLayout, FontMetrics, computeCardLayout, footprintForDisplayMode } from '../model/cardGeometry';
 import { groupKeyOf } from '../model/groups';
 import { pushOverlappingCards } from '../model/overlap';
 import { placeNewItems } from '../model/placement';
+import { GroupBox, computeGroupBoxes } from '../model/sceneGeometry';
 import { IsolationState, computeVisibleNodeIds, findNeighborhood } from '../model/visibility';
 
 export type ChangeTopic =
@@ -46,6 +47,8 @@ export interface StoreChange {
   topics: Set<ChangeTopic>;
   /** Positions changed for a new layout: the renderer animates the cards to their new place. */
   animatePositions?: boolean;
+  /** With `animatePositions`: the whole diagram changed, so the camera moves to show all of it. */
+  fitView?: boolean;
 }
 
 export type DiagramPhase = 'waiting' | 'scanning' | 'layouting' | 'ready' | 'failed';
@@ -62,7 +65,21 @@ export interface ContextMenuState {
 /** Computes layouts; implemented by LayoutClient, which runs them in a web worker. */
 export interface LayoutService {
   compute(input: LayoutInput): Promise<{ positions: Record<string, Point>; durationMs: number }>;
+  /** Places group boxes next to each other; returns the top-left corner of each box. */
+  pack(packing: PackingInput): Promise<Record<string, Point>>;
 }
+
+/** What "undo" restores: everything the user arranges by hand (spec §4.6). */
+interface ArrangementSnapshot {
+  layout: LayoutKind;
+  grouping: GroupingKind;
+  positionsByLayout: Map<LayoutKind, Map<string, Point>>;
+  positionsGrouping: Partial<Record<LayoutKind, GroupingKind>>;
+  displayModes: Map<string, 'compact' | 'full'>;
+  collapsedGroups: Set<string>;
+}
+
+const MAX_UNDO_STEPS = 50;
 
 type Listener = (change: StoreChange) => void;
 
@@ -107,6 +124,8 @@ export class DiagramStore {
   isSidePanelOpen = true;
   lastLayoutDurationMs = 0;
 
+  private undoStack: ArrangementSnapshot[] = [];
+  private redoStack: ArrangementSnapshot[] = [];
   private readonly listeners = new Set<Listener>();
 
   constructor(
@@ -174,6 +193,8 @@ export class DiagramStore {
     this.settings = settings;
     this.nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
     this.applySavedState(state);
+    this.undoStack = [];
+    this.redoStack = [];
     this.selection = new Set(Array.from(this.selection).filter((id) => this.nodeById.has(id)));
     if (this.isolation !== null && !this.nodeById.has(this.isolation.nodeId)) {
       this.isolation = null;
@@ -197,6 +218,12 @@ export class DiagramStore {
   // Layout
   // ---------------------------------------------------------------------------
 
+  /** The "Recompute layout" action: computes the current layout again; it can be undone. */
+  async recomputeLayout(): Promise<void> {
+    this.rememberForUndo();
+    await this.computeLayout(true);
+  }
+
   /** Computes the current layout from scratch, which discards the manual moves of this layout. */
   async computeLayout(animate: boolean): Promise<void> {
     if (this.graph === undefined) {
@@ -211,8 +238,13 @@ export class DiagramStore {
       this.positionsByLayout.set(layout, new Map(Object.entries(result.positions)));
       this.positionsGrouping[layout] = grouping;
       this.lastLayoutDurationMs = result.durationMs;
+      if (layout === this.layout && this.collapsedGroups.size > 0) {
+        // The layout gave collapsed groups the room of their members: take it back.
+        await this.repackGroupPositions();
+      }
       this.phase = 'ready';
-      this.emit(['positions', 'groups', 'ui'], layout === this.layout && animate);
+      const isShown = layout === this.layout && animate;
+      this.emit(['positions', 'groups', 'ui'], isShown, isShown);
     } catch (error) {
       this.phase = 'ready';
       this.failureMessage = `The layout failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -224,12 +256,13 @@ export class DiagramStore {
     if (layout === this.layout) {
       return;
     }
+    this.rememberForUndo();
     this.layout = layout;
     this.collapsedGroups.clear();
     const hasPositions = this.positions.size > 0 && this.positionsGrouping[layout] === this.grouping;
     if (hasPositions) {
       this.placeCardsWithoutPosition();
-      this.emit(['positions', 'groups', 'ui'], true);
+      this.emit(['positions', 'groups', 'ui'], true, true);
     } else {
       await this.computeLayout(true);
     }
@@ -239,6 +272,7 @@ export class DiagramStore {
     if (grouping === this.grouping) {
       return;
     }
+    this.rememberForUndo();
     this.grouping = grouping;
     this.collapsedGroups.clear();
     this.recomputeGroupKeys();
@@ -260,7 +294,7 @@ export class DiagramStore {
         return { id: node.id, width: card.width, height: card.height, group: this.groupKeyByNode.get(node.id) ?? '' };
       });
     const edges = this.graph!.edges.filter((edge) => structural.has(edge.kind));
-    return { kind: this.layout, nodes, edges };
+    return { kind: this.layout, nodes, edges, affinityEdges: this.graph!.edges };
   }
 
   /** Gives a position to visible cards that have none, next to their group (spec §6). */
@@ -285,6 +319,7 @@ export class DiagramStore {
   // ---------------------------------------------------------------------------
 
   setDisplayMode(ids: string[], mode: DisplayMode): void {
+    this.rememberForUndo();
     const grownIds: string[] = [];
     for (const id of ids) {
       const node = this.nodeById.get(id);
@@ -317,8 +352,24 @@ export class DiagramStore {
     this.setDisplayMode([id], next[this.displayModeOf(id)]);
   }
 
-  setAllDisplayModes(mode: DisplayMode): void {
-    this.setDisplayMode(this.graph?.nodes.map((node) => node.id) ?? [], mode);
+  /**
+   * Sets the display mode of every class. Almost every card changes size, so the layout is
+   * computed again instead of pushing overlapping cards one by one; it can be undone.
+   */
+  async setAllDisplayModes(mode: DisplayMode): Promise<void> {
+    if (this.graph === undefined) {
+      return;
+    }
+    this.rememberForUndo();
+    this.displayModes = new Map();
+    if (mode !== 'auto') {
+      for (const node of this.graph.nodes) {
+        this.displayModes.set(node.id, mode);
+      }
+    }
+    this.recomputeAllCardLayouts();
+    this.emit(['cards', 'ui']);
+    await this.computeLayout(true);
   }
 
   private visibleCardBoxes(): { id: string; width: number; height: number }[] {
@@ -354,16 +405,146 @@ export class DiagramStore {
     this.emit(['visibility', 'positions']);
   }
 
-  toggleGroupCollapsed(groupKey: string): void {
+  /**
+   * Collapses or expands a group, then moves the groups next to each other again: a collapsed
+   * group gives its room back, an expanded one takes it again (spec §4.4). It can be undone.
+   */
+  async toggleGroupCollapsed(groupKey: string): Promise<void> {
     if (!this.hasGroupBoxes) {
       return;
     }
+    this.rememberForUndo();
     if (this.collapsedGroups.has(groupKey)) {
       this.collapsedGroups.delete(groupKey);
     } else {
       this.collapsedGroups.add(groupKey);
     }
-    this.emit(['groups']);
+    try {
+      await this.repackGroupPositions();
+    } catch (error) {
+      this.failureMessage = `The groups could not be moved: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    this.emit(['groups', 'positions', 'ui'], true, true);
+  }
+
+  /**
+   * Moves whole groups so that they sit next to each other, related groups close together.
+   * The cards keep their place inside their group. Does not emit a change: the caller does.
+   */
+  private async repackGroupPositions(): Promise<void> {
+    const boxes = Array.from(computeGroupBoxes(this).values());
+    if (boxes.length === 0) {
+      return;
+    }
+    const shownRect = (box: GroupBox) => (box.isCollapsed ? box.collapsedRect : box.rect);
+    const packed = await this.layoutService.pack({
+      boxes: boxes.map((box) => ({ id: box.key, width: shownRect(box).width, height: shownRect(box).height })),
+      links: this.countGroupLinks(),
+    });
+    // The top-left corner of the diagram stays where it was.
+    const originX = Math.min(...boxes.map((box) => shownRect(box).x));
+    const originY = Math.min(...boxes.map((box) => shownRect(box).y));
+    const shiftByGroup = new Map<string, Point>();
+    for (const box of boxes) {
+      const target = packed[box.key];
+      if (target !== undefined) {
+        shiftByGroup.set(box.key, { x: originX + target.x - shownRect(box).x, y: originY + target.y - shownRect(box).y });
+      }
+    }
+    const positions = this.positions;
+    for (const [id, position] of positions) {
+      // Hidden cards move with their group too, so that they are in place when shown again.
+      const shift = shiftByGroup.get(this.groupKeyByNode.get(id) ?? '');
+      if (shift !== undefined) {
+        positions.set(id, { x: position.x + shift.x, y: position.y + shift.y });
+      }
+    }
+  }
+
+  /** Number of relations, of any kind, between the classes of each pair of groups. */
+  private countGroupLinks(): PackingInput['links'] {
+    const links = new Map<string, { from: string; to: string; weight: number }>();
+    for (const edge of this.graph?.edges ?? []) {
+      const from = this.groupKeyByNode.get(edge.from);
+      const to = this.groupKeyByNode.get(edge.to);
+      if (from === undefined || to === undefined || from === to) {
+        continue;
+      }
+      const key = from < to ? `${from}|${to}` : `${to}|${from}`;
+      const link = links.get(key) ?? { from, to, weight: 0 };
+      link.weight++;
+      links.set(key, link);
+    }
+    return Array.from(links.values());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Undo and redo (spec §4.6)
+  // ---------------------------------------------------------------------------
+
+  get canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+
+  get canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
+
+  /**
+   * Records the current arrangement, so that "undo" can come back to it. Called before each
+   * change of positions, display modes, layout, grouping or collapsed groups.
+   */
+  rememberForUndo(): void {
+    this.undoStack.push(this.takeSnapshot());
+    if (this.undoStack.length > MAX_UNDO_STEPS) {
+      this.undoStack.shift();
+    }
+    this.redoStack = [];
+  }
+
+  undo(): void {
+    const snapshot = this.undoStack.pop();
+    if (snapshot !== undefined) {
+      this.redoStack.push(this.takeSnapshot());
+      this.restoreSnapshot(snapshot);
+    }
+  }
+
+  redo(): void {
+    const snapshot = this.redoStack.pop();
+    if (snapshot !== undefined) {
+      this.undoStack.push(this.takeSnapshot());
+      this.restoreSnapshot(snapshot);
+    }
+  }
+
+  private takeSnapshot(): ArrangementSnapshot {
+    // Positions are never modified in place (a move stores a new object), so copying the maps is enough.
+    const positionsByLayout = new Map<LayoutKind, Map<string, Point>>();
+    for (const [layout, positions] of this.positionsByLayout) {
+      positionsByLayout.set(layout, new Map(positions));
+    }
+    return {
+      layout: this.layout,
+      grouping: this.grouping,
+      positionsByLayout,
+      positionsGrouping: { ...this.positionsGrouping },
+      displayModes: new Map(this.displayModes),
+      collapsedGroups: new Set(this.collapsedGroups),
+    };
+  }
+
+  private restoreSnapshot(snapshot: ArrangementSnapshot): void {
+    this.layout = snapshot.layout;
+    this.grouping = snapshot.grouping;
+    this.positionsByLayout = snapshot.positionsByLayout;
+    this.positionsGrouping = snapshot.positionsGrouping;
+    this.displayModes = snapshot.displayModes;
+    this.collapsedGroups = snapshot.collapsedGroups;
+    this.recomputeGroupKeys();
+    this.recomputeAllCardLayouts();
+    // The camera stays where it is: undoing a small move must not change the view.
+    this.emit(['positions', 'cards', 'groups', 'ui'], true);
   }
 
   isolate(nodeId: string): void {
@@ -569,8 +750,8 @@ export class DiagramStore {
     this.visibleNodeIds = computeVisibleNodeIds(this.graph, this.filters, this.isolation, this.activeRelations);
   }
 
-  private emit(topics: ChangeTopic[], animatePositions = false): void {
-    const change: StoreChange = { topics: new Set(topics), animatePositions };
+  private emit(topics: ChangeTopic[], animatePositions = false, fitView = false): void {
+    const change: StoreChange = { topics: new Set(topics), animatePositions, fitView };
     for (const listener of this.listeners) {
       listener(change);
     }

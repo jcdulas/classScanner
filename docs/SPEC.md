@@ -19,7 +19,7 @@ Status: specification v1, implemented. Sections 8 and 11 give the measured resul
 ### Out of scope for v1
 
 - Semantic analysis through clang / clangd (no `compile_commands.json`).
-- Real-time updates and incremental caching: the scan is manual and complete.
+- Incremental scanning: every scan, manual or after a file is saved, is complete.
 - Nodes for `typedef` / `using` and free functions.
 - Editing code from the diagram.
 - Languages other than C++.
@@ -44,14 +44,17 @@ Status: specification v1, implemented. Sections 8 and 11 give the measured resul
 |---|---|---|
 | `classScanner.scanFolder` | Right-click on a folder in the explorer, command palette | Asks for the depth, scans, opens the diagram |
 | `classScanner.rescan` | Button in the diagram toolbar, command palette | Runs a complete scan again with the same parameters |
+| `classScanner.changeDepth` | Depth button in the status of the diagram, command palette | Asks for another depth and scans again |
 | `classScanner.exportDiagram` | Toolbar, command palette | PNG or SVG export |
 
 The scan is always complete: no cache is kept between two scans. When a diagram is reopened, the folder is scanned again and the saved arrangement is reapplied (§6).
 
+While a diagram is open, saving a C++ file of its folder scans the folder again one second later (several saves in a row give one scan). The arrangement, the selection and the camera are kept; the progress is shown in the status bar only. The setting `classScanner.rescanOnSave` turns this off.
+
 ### 2.2 Depth and file selection
 
 - Depth `0`: only the files directly in the folder. Depth `N`: up to N levels of subfolders. `-1`: unlimited (default).
-- The depth is asked on every `scanFolder`, prefilled with the last value used.
+- The depth is asked the first time a folder is scanned, prefilled with the last value used. A folder that has a saved arrangement is scanned again with its saved depth, which "Change Scan Depth" changes.
 - Exclusions are configurable globs. Default: `**/build/**`, `**/out/**`, `**/node_modules/**`, `**/.git/**`, `**/third_party/**`, `**/external/**`.
 - Files above a size limit (default 2 MB) are skipped and listed in the scan report.
 
@@ -106,7 +109,7 @@ Each type has its own toggle in the side panel. Only inheritance is active when 
 | Composition | Member by value, `std::unique_ptr<T>`, container of values (`std::vector<T>`) | Solid line, filled diamond |
 | Aggregation | Pointer member, reference, `shared_ptr` / `weak_ptr`, container of pointers | Solid line, hollow diamond |
 | Dependency | Types of method parameters and return values; types used in method bodies (local variables, `new T`, `T::f()`, casts) | Dashed line, open arrow |
-| Include | `#include` between project files, projected onto the classes declared in those files | Thin dotted line |
+| Include | `#include` between project files, drawn once between the main class of each file | Thin dotted line |
 | Friend | `friend class` declarations | Dashed line, «friend» label |
 | Nesting | Class declared inside another one | Solid line, circled plus on the container side |
 
@@ -117,6 +120,7 @@ Rules:
 - Edges of the same type between the same two classes are deduplicated; for composition and aggregation, a `*` multiplicity wins over `1`.
 - Edges from a class to itself are dropped.
 - Dependencies found in `.cpp` bodies are attached to the class that owns the method. Code in free functions is ignored.
+- An include is a relation between two files. Drawing it between every class of one file and every class of the other would add many edges that say nothing more, so it is drawn once, between the main class of each file: the class named like the file (`scene.h` and `Scene`), otherwise the first class that is not nested in another. For a `.cpp` file, the classes considered are those whose methods it defines.
 
 ## 4. Diagram
 
@@ -152,7 +156,7 @@ Three levels of detail, driven by the zoom:
 
 This semantic zoom is controlled by the "Simplify cards" switch of the side panel, on by default. When it is off, cards keep the content of the Full level at every zoom level. Their text is only drawn when it is at least about 2 screen pixels tall (zoom of 0.15 and above): below that it cannot be seen, and drawing it for 1500 cards costs 20 frames per second instead of 60.
 
-Each class has a display mode: `auto` (default, follows the zoom), `compact` or `full` (pinned). At the Overview level every card is a plain rectangle whatever its mode: text would not be readable there. Pinning is done with a double-click, the context menu, or on the whole selection. Two global buttons force everything to compact or to full; a third one returns to `auto`.
+Each class has a display mode: `auto` (default, follows the zoom), `compact` or `full` (pinned). At the Overview level every card is a plain rectangle whatever its mode: text would not be readable there. Pinning is done with a double-click, the context menu, or on the whole selection. Two global buttons force everything to compact or to full; a third one returns to `auto`. As almost every card then changes size, these three buttons compute the layout again.
 
 Card footprint in the layout:
 
@@ -166,13 +170,14 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 
 | Layout | Description | Engine |
 |---|---|---|
-| Grouped (default) | Collapsible groups; inside each group, layers that follow the structural relations; groups are then packed next to each other | elkjs (layered, then rectpacking) |
+| Grouped (default) | Collapsible groups; inside each group, layers that follow the structural relations; groups are then packed next to each other, related groups close together | elkjs (layered, then rectpacking) |
 | Global hierarchy | A single layered layout, base classes at the top | elkjs (layered) |
 | Organic | Force simulation, strongly linked classes move closer; classes of a group start close together | d3-force |
 
 - Grouping criterion to choose from: namespace (default), folder, file, none.
 - Group boxes and collapsing exist in the grouped layout only. In the other layouts the classes of a group are scattered, so the group only shows as the header color of its cards.
-- A collapsed group becomes a single node showing its name and its number of classes.
+- Groups are packed in an order where groups with many relations between them (of any type) follow each other, so that they end up side by side.
+- A collapsed group becomes a single node showing its name and its number of classes. Collapsing or expanding a group packs the groups again: a collapsed group gives its room back. The cards keep their place inside their group.
 - The layout only uses the relation types checked as "structural" (default: inheritance and composition), so that enabling dependencies does not disrupt the arrangement.
 - The global hierarchy, and groups of more than 300 classes in the grouped layout, are layered by inheritance only. With composition as well, a dense project gives chains hundreds of layers deep (measured: 20 s of computation and a diagram 3 million units tall, against 0.7 s with inheritance only).
 - Switching layout animates the transition. Each layout keeps its own manual positions.
@@ -183,6 +188,8 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 - By default, the relations that are turned on stay visible at every zoom level: edges are not hidden or merged because the view is far away.
 - The "Merge relations" switch of the side panel, off by default, merges them when zoomed out instead: at the Overview level of the grouped layout, the edges between two groups become a single link, and the edges inside a group are not drawn.
 - Edges are drawn thin, so that they take little room: lines of about 1 screen pixel, whatever the zoom, and arrow heads and diamonds of 7 screen pixels. Far away, arrow heads and diamonds shrink with the cards instead of covering them.
+- In the grouped and global hierarchy layouts, edges are orthogonal: horizontal and vertical segments with rounded corners. An edge leaves a card through the side that faces the other card and enters the other card through the facing side. The edges that share a side of a card are spread along it and ordered like the cards they lead to. The derived classes of a base class all arrive at the middle of its side, where they share one arrow head and form a tree. In the organic layout, where cards are placed in every direction, edges are straight segments.
+- Edges are routed one relation type at a time, each type slightly shifted, so that toggling a type does not move the others. They do not avoid the cards in their way: they pass behind them.
 - When many edges of a type are on screen, they are drawn more transparent: up to 400 edges are almost opaque, and thousands form a veil that leaves the cards visible.
 - When a group is collapsed, the edges that reach it always merge into a single link per pair of groups. The thickness of a merged link grows with the logarithm of the number of relations; hovering shows the count per type.
 - Edges whose two ends are outside the viewport are not drawn.
@@ -203,14 +210,15 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 | Double-click on a card | Cycles the mode `auto` → `full` → `compact` |
 | Double-click on a group title | Collapses or expands the group |
 | Right-click | Context menu: display modes, isolate, go to source, exports of the selection, collapse the group |
-| Ctrl+F | Search by name (substring, case-insensitive), animated recentering on the result |
+| Ctrl+F | Search by name (substring, case-insensitive) among classes, methods and attributes. Enter recenters on the class of the result, Ctrl+Enter opens the result in the editor |
+| Ctrl+Z, Ctrl+Y | Undo and redo the changes of the arrangement: moves (one step per drag), display modes, collapsed groups, layout, grouping, "Recompute layout". Up to 50 steps, kept until the next scan |
 | Escape | Closes the menu, then clears the selection, then leaves the isolation |
 
 A tooltip shows the qualified name of a card when its text is not readable, and the counts of a merged link.
 
 The diagram fills the whole view; the user interface floats above it:
 
-- **Top left**: side panel toggle and search.
+- **Top left**: side panel toggle, search, undo and redo.
 - **Top center**: layout (segmented control), grouping criterion (dropdown), "Recompute layout", and the display mode of every card (auto, compact, full).
 - **Top right**: rescan and export.
 - **Side panel** (left, can be hidden; each section can be folded):
@@ -219,7 +227,7 @@ The diagram fills the whole view; the user interface floats above it:
   - the isolation depth;
   - filters by entity type (class, struct, union, enum, template) and display of external nodes (declarations without a definition);
   - filters by namespace and by folder (check box trees with a text filter).
-- **Bottom left**: status (classes shown, level of detail, scan duration) and access to the scan report.
+- **Bottom left**: status (classes shown, level of detail, scan duration), the scan depth, which is a button to change it, and access to the scan report.
 - **Bottom right**: zoom controls (zoom out, zoom level, zoom in, fit) above the minimap, which shows the groups and a draggable viewport rectangle.
 - **Selection bar** (bottom center, only while classes are selected): display mode of the selection, isolate and go to source for a single class, schema for a language model, sources as `.zip`, clear the selection.
 
@@ -329,6 +337,7 @@ interface Edge {
 | `classScanner.ignoredMacros` | `[]` | Macros to neutralize before parsing |
 | `classScanner.maxMembersInAutoMode` | `12` | Line cap of a card in `auto` mode |
 | `classScanner.structuralRelations` | `["inherit", "compose"]` | Relations taken into account by the layout |
+| `classScanner.rescanOnSave` | `true` | Scan again when a C++ file of an open diagram is saved |
 
 ## 8. Performance targets
 
@@ -342,7 +351,7 @@ The measurements were made on the synthetic project of the test suite (`npm run 
 | Computing a layout | under 5 s, without blocking the interface | grouped 1.4 s, global hierarchy 0.4 s, organic 1.6 s |
 | Display after layout | under 1 s | not measured on its own: 1.6 to 1.9 s from the start of the scan to the diagram on screen, scan and layout included |
 | Pan and zoom | 60 frames/s | 57 to 60 frames/s at the three levels of detail, every relation type active; 60 frames/s with "Simplify cards" off |
-| Toggling a relation type | under 100 ms | with the whole diagram in view: about 20 ms to turn off, about 40 ms to turn on with a batch to redraw |
+| Toggling a relation type | under 100 ms | with the whole diagram in view and orthogonal edges: about 20 ms to turn off, about 35 ms to turn on with a batch to redraw |
 | Search | result in under 50 ms | not measured (a linear scan of 1500 names) |
 | Webview memory | under 500 MB | not measured |
 
@@ -351,8 +360,8 @@ The measurements were made on the synthetic project of the test suite (`npm run 
 - **Unit tests** (`npm test`, vitest): a corpus of C++ files covering each construct (multiple inheritance, templates, nested classes, export macros, `#if`...) in `test/fixtures/constructs`, a small multi-file project in `test/fixtures/project`, and tests of name resolution, relations, card geometry, layouts, the webview store, the schema and the source file collection.
 - **Integration tests** (`npm run test:integration`): run the extension in VS Code 1.130.0 (or another version with `--vscode-version`), scan the fixture project, check that the webview reports the diagram on screen without error, check the saved arrangement, and export PNG, SVG, schema and `.zip` files to `out/integration/`. On the synthetic project they also measure frame times and relation toggle times.
 - **Benchmark** (`npm run benchmark`): scan and layout times on the synthetic project.
-- **Preview** (`npm run preview`): renders the webview in a headless browser, outside of VS Code, and saves a screenshot. Scenarios play mouse actions first (Ctrl+drag selection, wheel zoom, right-click), which shows that these interactions work.
-- Not automated: assertions on mouse interactions (dragging cards, double-click...) and validation on a real, large open-source project.
+- **Preview** (`npm run preview`): renders the webview in a headless browser, outside of VS Code, and saves a screenshot. Scenarios play user actions first (Ctrl+drag selection, wheel zoom, right-click, double-click on a group, dragging a card, Ctrl+Z, typing in the search box), which shows that these interactions work.
+- Not automated: assertions on mouse interactions, and validation on a real, large open-source project.
 
 ## 10. Milestones
 

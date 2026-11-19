@@ -40,6 +40,9 @@ export function TopBar({ controller }: TopBarProps) {
       <div class="glass bar">
         <GlassButton icon="sidebar" title="Show or hide the panel" isActive={store.isSidePanelOpen} onPress={() => store.toggleSidePanel()} />
         <SearchBox controller={controller} />
+        <span class="bar-divider" />
+        <GlassButton icon="undo" title="Undo the last change of the arrangement (Ctrl+Z)" isDisabled={!store.canUndo} onPress={() => store.undo()} />
+        <GlassButton icon="redo" title="Redo (Ctrl+Y)" isDisabled={!store.canRedo} onPress={() => store.redo()} />
       </div>
 
       <div class="glass bar">
@@ -55,10 +58,10 @@ export function TopBar({ controller }: TopBarProps) {
           icon="relayout"
           title="Recompute the layout: reclaims free space and discards manual moves in this layout"
           isDisabled={isBusy || !hasGraph}
-          onPress={() => void store.computeLayout(true)}
+          onPress={() => void store.recomputeLayout()}
         />
         <span class="bar-divider" />
-        <Segmented options={DISPLAY_OPTIONS} value={commonDisplayMode(store)} onChange={(value) => store.setAllDisplayModes(value as DisplayMode)} />
+        <Segmented options={DISPLAY_OPTIONS} value={commonDisplayMode(store)} onChange={(value) => void store.setAllDisplayModes(value as DisplayMode)} />
       </div>
 
       <div class="glass bar">

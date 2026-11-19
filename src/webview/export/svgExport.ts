@@ -5,7 +5,8 @@
 // its text stays selectable and sharp at any size. Cards are drawn with full
 // detail, honoring their display mode.
 
-import { RelationKind, Visibility } from '../../shared/graphModel';
+import { ALL_RELATION_KINDS, RelationKind, Visibility } from '../../shared/graphModel';
+import { Point } from '../../shared/savedState';
 import { CARD_STYLE, CardLayout } from '../model/cardGeometry';
 import {
   DASH_PATTERNS,
@@ -16,6 +17,7 @@ import {
   edgeSegment,
   lineEndBeforeDecoration,
 } from '../model/edgeGeometry';
+import { routeEdges, routingStyleForLayout } from '../model/edgeRouting';
 import { Rect, expandRect, unionOfRects } from '../model/geometry';
 import { GROUP_STYLE } from '../model/groups';
 import { GroupBox, cardRect, computeDisplayedEdges, computeGroupBoxes, isCardShown } from '../model/sceneGeometry';
@@ -55,8 +57,13 @@ export function buildSvg(store: DiagramStore, theme: Theme, scope: 'diagram' | '
   for (const box of groupBoxes.values()) {
     parts.push(groupSvg(box, theme));
   }
-  for (const item of edges) {
-    parts.push(edgeSvg(item.source, item.target, item.edge.kind, theme));
+  // Edges are routed kind by kind, as in the WebGL rendering.
+  const routingStyle = routingStyleForLayout(store.layout);
+  for (const kind of ALL_RELATION_KINDS) {
+    const edgesOfKind = edges.filter((item) => item.edge.kind === kind);
+    for (const route of routeEdges(edgesOfKind, kind, routingStyle)) {
+      parts.push(edgeSvg(route.points, kind, theme));
+    }
   }
   for (const link of displayed.aggregated) {
     if (scope === 'diagram') {
@@ -95,23 +102,27 @@ function groupSvg(box: GroupBox, theme: Theme): string {
   return lines.join('\n');
 }
 
-function edgeSvg(source: Rect, target: Rect, kind: RelationKind, theme: Theme): string {
+function edgeSvg(points: Point[], kind: RelationKind, theme: Theme): string {
   const style = EDGE_STYLES[kind];
   const color = toCssColor(theme.relationColors[kind]);
-  const segment = edgeSegment(source, target);
-  const tip = style.decorationAtSource ? segment.start : segment.end;
-  const tail = style.decorationAtSource ? segment.end : segment.start;
-  const lineEnd = lineEndBeforeDecoration(style.decoration, tail, tip, DECORATION_SIZE);
+  // The decoration sits at the `from` end for composition, aggregation and nesting.
+  const tipIndex = style.decorationAtSource ? 0 : points.length - 1;
+  const tailIndex = style.decorationAtSource ? 1 : points.length - 2;
+  const tip = points[tipIndex];
+  const tail = points[tailIndex];
+  const linePoints = [...points];
+  linePoints[tipIndex] = lineEndBeforeDecoration(style.decoration, tail, tip, DECORATION_SIZE);
   const dash = DASH_PATTERNS[style.line];
   const dashAttribute = dash === undefined ? '' : ` stroke-dasharray="${dash[0]} ${dash[1]}"`;
   const polygon = decorationPolygon(style.decoration, tail, tip, DECORATION_SIZE);
+  const linePath = linePoints.map((point) => `${point.x},${point.y}`).join(' ');
   const parts = [
-    `<line x1="${tail.x}" y1="${tail.y}" x2="${lineEnd.x}" y2="${lineEnd.y}" stroke="${color}" stroke-width="${style.width}"${dashAttribute}/>`,
+    `<polyline points="${linePath}" fill="none" stroke="${color}" stroke-width="${style.width}" stroke-linejoin="round"${dashAttribute}/>`,
   ];
-  const points = pointsAttribute(polygon);
+  const decorationPoints = pointsAttribute(polygon);
   switch (style.decoration) {
     case 'openArrow':
-      parts.push(`<polyline points="${points}" fill="none" stroke="${color}" stroke-width="${style.width}"/>`);
+      parts.push(`<polyline points="${decorationPoints}" fill="none" stroke="${color}" stroke-width="${style.width}"/>`);
       break;
     case 'circledPlus': {
       const [centerX, centerY] = polygon;
@@ -124,7 +135,7 @@ function edgeSvg(source: Rect, target: Rect, kind: RelationKind, theme: Theme): 
     }
     default: {
       const fill = style.decoration === 'filledDiamond' ? color : toCssColor(theme.background);
-      parts.push(`<polygon points="${points}" fill="${fill}" stroke="${color}" stroke-width="${style.width}"/>`);
+      parts.push(`<polygon points="${decorationPoints}" fill="${fill}" stroke="${color}" stroke-width="${style.width}"/>`);
     }
   }
   return parts.join('\n');

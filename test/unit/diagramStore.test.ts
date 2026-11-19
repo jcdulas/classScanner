@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { ClassNode, Graph, ScanReport } from '../../src/shared/graphModel';
 import { computeLayout } from '../../src/webview/layout/computeLayout';
+import { orderByAffinity, packGroups } from '../../src/webview/layout/groupPacking';
 import { LayoutInput } from '../../src/webview/layout/layoutTypes';
 import { Rect, rectsOverlap } from '../../src/webview/model/geometry';
 import { computeDisplayedEdges, computeGroupBoxes } from '../../src/webview/model/sceneGeometry';
@@ -13,6 +14,7 @@ const SETTINGS = { maxMembersInAutoMode: 12, structuralRelations: ['inherit' as 
 
 const layoutService: LayoutService = {
   compute: async (input: LayoutInput) => ({ positions: await computeLayout(input), durationMs: 0 }),
+  pack: async (packing) => Object.fromEntries(await packGroups(packing.boxes, packing.links)),
 };
 
 function makeNode(id: string, namespace: string, memberCount = 2): ClassNode {
@@ -134,7 +136,7 @@ describe('store actions', () => {
     expect(merged.individual).toHaveLength(0);
     expect(merged.aggregated).toHaveLength(1);
 
-    store.toggleGroupCollapsed('b');
+    await store.toggleGroupCollapsed('b');
     const collapsed = computeDisplayedEdges(store, computeGroupBoxes(store));
     expect(collapsed.individual.map((item) => item.edge.kind)).toEqual(['inherit', 'inherit']);
     expect(collapsed.aggregated).toHaveLength(1);
@@ -174,5 +176,102 @@ describe('store actions', () => {
     expect(restored.positions.has('b::Other')).toBe(false);
     // The new class is placed next to its group instead of recomputing the layout.
     expect(restored.positions.has('b::New')).toBe(true);
+  });
+});
+
+describe('undo and redo', () => {
+  it('undoes and redoes a move, one step per drag', async () => {
+    const store = await loadedStore();
+    const before = store.positions.get('a::Base')!;
+    expect(store.canUndo).toBe(false);
+    // A drag: the pointer interaction records one step, then moves several times.
+    store.rememberForUndo();
+    store.moveNodes(['a::Base'], 30, 0);
+    store.moveNodes(['a::Base'], 30, 10);
+    expect(store.positions.get('a::Base')).toEqual({ x: before.x + 60, y: before.y + 10 });
+
+    store.undo();
+    expect(store.positions.get('a::Base')).toEqual(before);
+    expect(store.canRedo).toBe(true);
+    store.redo();
+    expect(store.positions.get('a::Base')).toEqual({ x: before.x + 60, y: before.y + 10 });
+  });
+
+  it('undoes a display mode change, with the card sizes and the pushed neighbors', async () => {
+    const store = await loadedStore();
+    const positionsBefore = new Map(store.positions);
+    const heightBefore = store.cardLayouts.get('a::Right')!.height;
+    store.setDisplayMode(['a::Right'], 'full');
+    store.undo();
+    expect(store.displayModeOf('a::Right')).toBe('auto');
+    expect(store.cardLayouts.get('a::Right')!.height).toBe(heightBefore);
+    expect(store.positions).toEqual(positionsBefore);
+  });
+
+  it('undoes a recomputed layout, which brings the manual moves back', async () => {
+    const store = await loadedStore();
+    store.rememberForUndo();
+    store.moveNodes(['a::Base'], 500, 0);
+    const moved = store.positions.get('a::Base');
+    await store.recomputeLayout();
+    expect(store.positions.get('a::Base')).not.toEqual(moved);
+    store.undo();
+    expect(store.positions.get('a::Base')).toEqual(moved);
+  });
+});
+
+describe('groups', () => {
+  it('gives the room of a collapsed group back, and takes it again when expanded', async () => {
+    const store = await loadedStore();
+    const widthOf = () => {
+      const boxes = Array.from(computeGroupBoxes(store).values()).map((box) => (box.isCollapsed ? box.collapsedRect : box.rect));
+      return Math.max(...boxes.map((rect) => rect.x + rect.width)) - Math.min(...boxes.map((rect) => rect.x));
+    };
+    const expandedWidth = widthOf();
+    await store.toggleGroupCollapsed('a');
+    expect(widthOf()).toBeLessThan(expandedWidth);
+    // The collapsed card and the other group do not overlap.
+    const boxes = computeGroupBoxes(store);
+    expect(rectsOverlap(boxes.get('a')!.collapsedRect, boxes.get('b')!.rect)).toBe(false);
+
+    await store.toggleGroupCollapsed('a');
+    expect(widthOf()).toBeCloseTo(expandedWidth, 0);
+    expectNoOverlap(store);
+  });
+
+  it('recomputes the layout when every card changes its display mode', async () => {
+    const store = await loadedStore();
+    await store.setAllDisplayModes('full');
+    expect(store.displayModeOf('a::Right')).toBe('full');
+    expectNoOverlap(store);
+    await store.setAllDisplayModes('auto');
+    expect(store.displayModes.size).toBe(0);
+    store.undo();
+    expect(store.displayModeOf('a::Right')).toBe('full');
+  });
+
+  it('orders groups so that related groups follow each other', async () => {
+    const box = (id: string) => ({ id, width: 100, height: 100 });
+    const ordered = orderByAffinity(
+      [box('audio'), box('core'), box('net'), box('ui'), box('unrelated')],
+      [
+        { from: 'core', to: 'ui', weight: 5 },
+        { from: 'ui', to: 'audio', weight: 3 },
+        { from: 'core', to: 'net', weight: 1 },
+      ],
+    );
+    // `ui` has the most relations; `core` and `audio` follow it; `unrelated` comes last.
+    expect(ordered.map((group) => group.id)).toEqual(['ui', 'core', 'audio', 'net', 'unrelated']);
+  });
+
+  it('packs the boxes in the order they are given, row by row', async () => {
+    const boxes = ['first', 'second', 'third'].map((id) => ({ id, width: 200, height: 100 }));
+    const positions = await packGroups(boxes, []);
+    const first = positions.get('first')!;
+    const second = positions.get('second')!;
+    const third = positions.get('third')!;
+    const readingOrder = (point: { x: number; y: number }) => point.y * 10_000 + point.x;
+    expect(readingOrder(first)).toBeLessThan(readingOrder(second));
+    expect(readingOrder(second)).toBeLessThan(readingOrder(third));
   });
 });

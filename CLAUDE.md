@@ -22,7 +22,7 @@ npm run package            # increments the patch version, then production build
 
 Run `npm run typecheck` and `npm test` after every change. Run `npm run test:integration` after any change to the extension host or the webview: it is the only test that runs the real webview. It writes PNG, SVG, schema and zip files to `out/integration/`; look at the PNG files to check the rendering. When the synthetic project exists, it also measures frame rates and relation toggle times (spec §8).
 
-After any change to the user interface or to the drawing, run `npm run preview` and look at the screenshot: it is the only way to see the HTML controls, which the PNG exports of the integration tests do not contain. Options: `--theme dark|light`, `--scenario default|selection|zoom|menu|zoomAt` (scripted mouse actions, see `test/preview/harness.html`), `--relations all`, `--size 1000x700`, `--folder test/synthetic-project`, `--output file.png`.
+After any change to the user interface or to the drawing, run `npm run preview` and look at the screenshot: it is the only way to see the HTML controls, which the PNG exports of the integration tests do not contain. Options: `--theme dark|light`, `--scenario default|selection|zoom|menu|zoomAt|doubleClick|drag|search` (scripted user actions, see `test/preview/harness.html`), `--x 0.5 --y 0.5`, `--undo 1`, `--text area`, `--state '{...}'`, `--relations all`, `--size 1000x700`, `--folder test/synthetic-project`, `--output file.png`.
 
 Press F5 in VS Code to try the extension by hand.
 

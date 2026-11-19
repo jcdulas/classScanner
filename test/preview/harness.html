@@ -97,6 +97,31 @@
           await wait(60);
         }
       },
+      // Double-click at the `x`, `y` point: on a group title it collapses the group, on a card it cycles its mode.
+      doubleClick: async () => {
+        const host = document.querySelector('.diagram-host');
+        mouse('dblclick', host.clientWidth * Number(parameters.get('x')), host.clientHeight * Number(parameters.get('y')));
+        await wait(1500);
+      },
+      // Drag from the `x`, `y` point 300 pixels to the right. With `undo=1`, press Ctrl+Z afterwards.
+      drag: async () => {
+        const host = document.querySelector('.diagram-host');
+        const startX = host.clientWidth * Number(parameters.get('x'));
+        const startY = host.clientHeight * Number(parameters.get('y'));
+        dragRectangle(startX, startY, startX + 300, startY + 40, {});
+        await wait(400);
+        if (parameters.get('undo') === '1') {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+          await wait(900);
+        }
+      },
+      // Type the `text` URL parameter in the search box.
+      search: async () => {
+        const input = document.querySelector('.search-field input');
+        input.focus();
+        input.value = parameters.get('text');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      },
       // Right-click in the middle of the diagram.
       menu: async () => {
         const host = document.querySelector('.diagram-host');

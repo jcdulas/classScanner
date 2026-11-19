@@ -2,6 +2,15 @@
 
 ## 0.1.2
 
+- Undo and redo (Ctrl+Z, Ctrl+Y) for moves, display modes, collapsed groups and layout changes.
+- Orthogonal edges with rounded corners, spread along the sides of the cards; derived classes share the arrow head of their base class.
+- Related groups are placed side by side, and a collapsed group gives its room back.
+- "Compact" and "Full" for every card compute the layout again instead of pushing cards one by one.
+- An include is drawn once between the main classes of the two files, instead of between all their classes.
+- Search also finds methods and attributes; Ctrl+Enter opens a result in the editor.
+- The diagram scans again when a C++ file of its folder is saved (setting `classScanner.rescanOnSave`).
+- The scan depth is asked the first time only; the new "Change Scan Depth" command and the Depth button change it.
+
 - Thinner relation lines, arrow heads and diamonds.
 - The relations that are turned on stay visible at every zoom level, instead of being merged between groups when zoomed out. Dense sets of relations are drawn more transparent.
 - New "Zoomed out" switches in the side panel: "Simplify cards" (turn it off to keep full cards at every zoom level) and "Merge relations" (turn it on to merge the relations between groups when zoomed out).

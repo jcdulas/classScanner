@@ -1,7 +1,8 @@
 // Renders the webview in a headless browser and saves a screenshot, to check the user
 // interface without starting VS Code. Run `npm run build` first.
 //
-// Usage: node scripts/previewWebview.mjs [--theme dark|light] [--scenario default|selection|zoom|menu]
+// Usage: node scripts/previewWebview.mjs [--theme dark|light]
+//        [--scenario default|selection|zoom|menu|zoomAt|doubleClick|drag|search] [--x 0.5 --y 0.5] [--undo 1] [--text area]
 //        [--folder test/fixtures/project] [--relations all|inherit,compose] [--size 1500x950]
 //        [--output out/preview/preview.png] [--state '{"simplifyCardsWhenZoomedOut":false}']
 //
@@ -178,7 +179,16 @@ await buildGraphMessage();
 const server = await startServer();
 try {
   const address = server.address();
-  await takeScreenshot(`http://127.0.0.1:${address.port}/?theme=${theme}&scenario=${scenario}&x=${option("x", "0.5")}&y=${option("y", "0.5")}`);
+  // The parameters read by the scenarios of the harness page.
+  const query = new URLSearchParams({
+    theme,
+    scenario,
+    x: option('x', '0.5'),
+    y: option('y', '0.5'),
+    undo: option('undo', '0'),
+    text: option('text', ''),
+  });
+  await takeScreenshot(`http://127.0.0.1:${address.port}/?${query}`);
   console.log(`Screenshot saved to ${output}`);
 } finally {
   server.close();

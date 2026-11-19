@@ -58,6 +58,10 @@ export class DiagramController {
     this.host.post({ type: 'showReport' });
   }
 
+  changeDepth(): void {
+    this.host.post({ type: 'changeDepth' });
+  }
+
   openSource(file: number, line: number): void {
     this.host.post({ type: 'openSource', file, line });
   }

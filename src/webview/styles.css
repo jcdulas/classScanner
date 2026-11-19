@@ -238,6 +238,9 @@ body {
   min-width: 190px;
   padding: 6px;
   border-radius: 16px;
+  /* More opaque than a panel: a popover opened from a glass bar cannot blur what is behind that
+     bar (a blurred element only sees inside its blurred parent), and its text must stay readable. */
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 92%, transparent);
 }
 
 .menu-item {
@@ -303,7 +306,7 @@ body {
   align-items: center;
   gap: 7px;
   height: 30px;
-  width: 230px;
+  width: 250px;
   padding: 0 10px;
   box-sizing: border-box;
   border-radius: 999px;
@@ -359,18 +362,45 @@ body {
   overflow-y: auto;
 }
 
-.search-results .menu-item {
-  justify-content: space-between;
-}
-
 .result-name {
   font-family: var(--vscode-editor-font-family);
 }
 
-.result-namespace {
+/* A small tag that says whether the result is a class, a method or an attribute. */
+.result-kind {
+  flex-shrink: 0;
+  width: 58px;
+  padding: 1px 0;
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.result-kind.kind-class {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text);
+}
+
+.result-context {
+  margin-left: auto;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.result-open {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 3px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.result-open:hover {
+  background: var(--control-hover);
+  color: var(--text);
 }
 
 /* ---- Side panel ---- */

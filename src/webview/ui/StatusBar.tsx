@@ -34,6 +34,11 @@ export function StatusPill({ controller }: ControllerProps) {
         {report.scannedFileCount} files, {(report.durationMs / 1000).toFixed(1)} s
       </span>
       <GlassButton
+        label={report.depth < 0 ? 'Depth: all' : `Depth: ${report.depth}`}
+        title="Change the scan depth and scan again"
+        onPress={() => controller.changeDepth()}
+      />
+      <GlassButton
         icon="report"
         label={hasWarnings ? 'Warnings' : undefined}
         title={hasWarnings ? 'The scan reported warnings: open the scan report' : 'Open the scan report'}

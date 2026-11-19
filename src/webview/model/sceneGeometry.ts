@@ -8,7 +8,9 @@
 // the view is zoomed far out, if the user turned that option on.
 
 import { Edge, RelationKind } from '../../shared/graphModel';
-import { DiagramStore } from '../state/diagramStore';
+// Imported as a type only: the store itself uses this module, and a type import is erased
+// when compiling, so the two modules do not load each other in a loop.
+import type { DiagramStore } from '../state/diagramStore';
 import { Rect, rectsOverlap, unionOfRects } from './geometry';
 import { GROUP_STYLE, groupLabel } from './groups';
 

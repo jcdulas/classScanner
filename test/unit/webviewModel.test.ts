@@ -5,6 +5,7 @@ import { ClassNode, Edge, Graph, MemberFlags } from '../../src/shared/graphModel
 import { createDefaultState } from '../../src/shared/savedState';
 import { CARD_STYLE, computeCardLayout } from '../../src/webview/model/cardGeometry';
 import { clipSegmentToRect, dashSegments, edgeSegment } from '../../src/webview/model/edgeGeometry';
+import { routeEdges } from '../../src/webview/model/edgeRouting';
 import { pushOverlappingCards } from '../../src/webview/model/overlap';
 import { placeNewItems } from '../../src/webview/model/placement';
 import { computeVisibleNodeIds, findNeighborhood } from '../../src/webview/model/visibility';
@@ -196,6 +197,63 @@ describe('visibility and isolation', () => {
     expect(Array.from(findNeighborhood('app::A', 2, graph.edges, new Set(active))).sort()).toEqual(['app::A', 'app::B', 'lib::C']);
     const isolated = computeVisibleNodeIds(graph, filters, { nodeId: 'lib::D', depth: 5 }, new Set(active));
     expect(Array.from(isolated)).toEqual(['lib::D']);
+  });
+});
+
+describe('edge routing', () => {
+  const top = { x: 100, y: 0, width: 200, height: 100 };
+  const bottomLeft = { x: 0, y: 300, width: 100, height: 60 };
+  const bottomRight = { x: 300, y: 300, width: 100, height: 60 };
+  const edgeFrom = (from: string, to: string, kind: Edge['kind'], source: typeof top, target: typeof top) => ({
+    edge: { from, to, kind } as Edge,
+    source,
+    target,
+  });
+
+  it('draws a straight segment in the straight style', () => {
+    const [route] = routeEdges([edgeFrom('A', 'B', 'depend', top, bottomLeft)], 'depend', 'straight');
+    expect(route.points).toHaveLength(2);
+  });
+
+  it('routes with horizontal and vertical segments, through facing sides', () => {
+    const [route] = routeEdges([edgeFrom('Child', 'Base', 'inherit', bottomLeft, top)], 'inherit', 'orthogonal');
+    expect(route.points).toEqual([
+      { x: 50, y: 300 },
+      { x: 50, y: 200 },
+      { x: 200, y: 200 },
+      { x: 200, y: 100 },
+    ]);
+  });
+
+  it('makes derived classes arrive at the middle of their base class', () => {
+    const routes = routeEdges(
+      [edgeFrom('Left', 'Base', 'inherit', bottomLeft, top), edgeFrom('Right', 'Base', 'inherit', bottomRight, top)],
+      'inherit',
+      'orthogonal',
+    );
+    expect(routes.map((route) => route.points[route.points.length - 1])).toEqual([
+      { x: 200, y: 100 },
+      { x: 200, y: 100 },
+    ]);
+  });
+
+  it('spreads the other relations along the side, ordered like the cards they lead to', () => {
+    const routes = routeEdges(
+      [edgeFrom('Whole', 'Right', 'compose', top, bottomRight), edgeFrom('Whole', 'Left', 'compose', top, bottomLeft)],
+      'compose',
+      'orthogonal',
+    );
+    const startToRight = routes[0].points[0];
+    const startToLeft = routes[1].points[0];
+    expect(startToLeft.x).toBeLessThan(startToRight.x);
+    expect(startToRight.x - startToLeft.x).toBe(12);
+    expect(startToLeft.y).toBe(100);
+  });
+
+  it('links cards that are too close for an elbow with a straight segment', () => {
+    const near = { x: 150, y: 105, width: 100, height: 50 };
+    const [route] = routeEdges([edgeFrom('A', 'B', 'compose', top, near)], 'compose', 'orthogonal');
+    expect(route.points).toHaveLength(2);
   });
 });
 

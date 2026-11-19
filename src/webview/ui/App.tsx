@@ -27,10 +27,24 @@ export function App({ controller }: AppProps) {
     }
   }, [controller]);
 
+  // Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes (Cmd on macOS).
   // Escape closes the menu, then clears the selection, then leaves the isolation mode.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.target instanceof HTMLInputElement) {
+      if (event.target instanceof HTMLInputElement) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && (key === 'z' || key === 'y')) {
+        event.preventDefault();
+        if (key === 'y' || event.shiftKey) {
+          store.redo();
+        } else {
+          store.undo();
+        }
+        return;
+      }
+      if (event.key !== 'Escape') {
         return;
       }
       if (store.contextMenu !== null) {

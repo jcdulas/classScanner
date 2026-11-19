@@ -10,6 +10,7 @@ import { DIAGRAM_VIEW_TYPE, DiagramPanel, PanelServices, ScanTarget } from './di
 import { readSettings } from './configuration';
 import { runExportFlow } from './exportFlow';
 import { ArchiveLayout } from './sourceArchive';
+import { StateStore } from './stateStore';
 
 const LAST_DEPTH_KEY = 'classScanner.lastDepth';
 const ACTIVE_CONTEXT_KEY = 'classScanner.diagramIsActive';
@@ -80,11 +81,24 @@ export function activate(context: vscode.ExtensionContext): ClassScannerApi {
       if (folder === undefined) {
         return;
       }
-      const depth = await askDepth(context);
+      // A folder that was already scanned keeps its depth: it is asked only the first time
+      // (spec §2.2). "Change Scan Depth" changes it afterwards.
+      const savedState = await new StateStore(folder, context.globalStorageUri.fsPath).read();
+      const depth = savedState?.scan.depth ?? (await askDepth(context, undefined));
       if (depth === undefined) {
         return;
       }
       await openDiagram({ folder, depth });
+    }),
+    vscode.commands.registerCommand('classScanner.changeDepth', async () => {
+      if (activePanel === undefined) {
+        void vscode.window.showInformationMessage('classScanner: open a diagram first.');
+        return;
+      }
+      const depth = await askDepth(context, activePanel.depth);
+      if (depth !== undefined) {
+        await activePanel.scan(depth);
+      }
     }),
     vscode.commands.registerCommand('classScanner.rescan', async () => {
       if (activePanel === undefined) {
@@ -164,9 +178,9 @@ async function pickFolder(): Promise<string | undefined> {
   return selection?.[0]?.fsPath;
 }
 
-/** Asks for the scan depth, prefilled with the last value used (spec §2.2). */
-async function askDepth(context: vscode.ExtensionContext): Promise<number | undefined> {
-  const lastDepth = context.globalState.get<number>(LAST_DEPTH_KEY) ?? readSettings().maxDepth;
+/** Asks for the scan depth, prefilled with the depth of the diagram or the last value used (spec §2.2). */
+async function askDepth(context: vscode.ExtensionContext, currentDepth: number | undefined): Promise<number | undefined> {
+  const lastDepth = currentDepth ?? context.globalState.get<number>(LAST_DEPTH_KEY) ?? readSettings().maxDepth;
   const answer = await vscode.window.showInputBox({
     title: 'Scan depth',
     prompt: '0 scans only the files in the folder, N goes N levels of subfolders deep, -1 is unlimited.',

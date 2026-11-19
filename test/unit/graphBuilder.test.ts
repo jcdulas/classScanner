@@ -75,19 +75,18 @@ describe('fixture project', () => {
     expect(edges).not.toContain('depend geo::Scene -> geo::Shape');
   });
 
-  it('projects include directives onto classes, with relative and suffix matching', async () => {
+  it('draws each include once, between the main classes of the two files', async () => {
     const { graph } = await scanTestFolder(PROJECT_FOLDER);
-    const edges = describeEdges(graph.edges);
-    expect(edges).toEqual(
-      expect.arrayContaining([
-        // scene.h includes "shape.h", relative to its own folder.
-        'include geo::Scene -> geo::Shape',
-        // renderer.h includes <geometry/shape.h>, found by path suffix.
-        'include geo::Renderer -> geo::Point',
-        // scene.cpp defines methods of Scene and includes renderer.h.
-        'include geo::Scene -> geo::Logger',
-      ]),
-    );
+    const includes = describeEdges(graph.edges.filter((edge) => edge.kind === 'include')).sort();
+    expect(includes).toEqual([
+      // renderer.h includes <geometry/shape.h>, found by path suffix. The main class of
+      // shape.h is Shape, named like the file, although Point is declared first.
+      'include geo::Renderer -> geo::Shape',
+      // scene.cpp defines methods of Scene and includes "renderer.h".
+      'include geo::Scene -> geo::Renderer',
+      // scene.h includes "shape.h", relative to its own folder.
+      'include geo::Scene -> geo::Shape',
+    ]);
   });
 
   it('builds a scan report', async () => {

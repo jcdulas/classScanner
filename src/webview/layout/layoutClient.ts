@@ -5,7 +5,7 @@
 // and the worker is started from a `blob:` URL instead, which the Content
 // Security Policy of the webview allows (see src/extension/webviewHtml.ts).
 
-import { LayoutInput, LayoutPositions, LayoutResponseMessage } from './layoutTypes';
+import { LayoutInput, LayoutPositions, LayoutRequestMessage, LayoutResponseMessage, PackingInput } from './layoutTypes';
 
 export interface LayoutResult {
   positions: LayoutPositions;
@@ -28,10 +28,20 @@ export class LayoutClient {
   }
 
   compute(input: LayoutInput): Promise<LayoutResult> {
+    return this.send((requestId) => ({ requestId, input }));
+  }
+
+  /** Places group boxes next to each other; returns the top-left corner of each box. */
+  async pack(packing: PackingInput): Promise<LayoutPositions> {
+    const result = await this.send((requestId) => ({ requestId, packing }));
+    return result.positions;
+  }
+
+  private send(buildMessage: (requestId: number) => LayoutRequestMessage): Promise<LayoutResult> {
     const requestId = this.nextRequestId++;
     return new Promise((resolve, reject) => {
       this.pending.set(requestId, { resolve, reject });
-      this.worker.postMessage({ requestId, input });
+      this.worker.postMessage(buildMessage(requestId));
     });
   }
 

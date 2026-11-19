@@ -56,6 +56,8 @@ export type WebviewToHostMessage =
   | { type: 'rescan' }
   | { type: 'startExport' }
   | { type: 'showReport' }
+  /** Asks the host to prompt for another scan depth, then to scan again. */
+  | { type: 'changeDepth' }
   /** PNG data is base64-encoded; SVG and schema data are text. */
   | { type: 'exportResult'; format: ExportFormat; data: string }
   | { type: 'selectionResult'; nodeIds: string[] }

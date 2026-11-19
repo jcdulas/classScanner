@@ -5,6 +5,8 @@
 // Keeping them here avoids loading an icon font in the webview.
 
 const ICON_PATHS = {
+  undo: 'M9 14L4 9l5-5 M4 9h10a6 6 0 0 1 0 12h-3',
+  redo: 'M15 14l5-5-5-5 M20 9H10a6 6 0 0 0 0 12h3',
   sidebar: 'M3 7a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z M9 4v16',
   search: 'M11 5a6 6 0 1 0 0 12a6 6 0 0 0 0-12z M20 20l-4.5-4.5',
   close: 'M6 6l12 12 M18 6L6 18',

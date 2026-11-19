@@ -12,7 +12,8 @@
 import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, SimulationNodeDatum } from 'd3-force';
 import { Point } from '../../shared/savedState';
 import { GROUP_STYLE } from '../model/groups';
-import { Box, DirectedLink, layeredLayout, packBoxes } from './elkLayout';
+import { Box, DirectedLink, layeredLayout } from './elkLayout';
+import { GroupLink, packGroups } from './groupPacking';
 import { LayoutEdgeInput, LayoutInput, LayoutNodeInput, LayoutPositions } from './layoutTypes';
 
 export async function computeLayout(input: LayoutInput): Promise<LayoutPositions> {
@@ -20,7 +21,7 @@ export async function computeLayout(input: LayoutInput): Promise<LayoutPositions
   let positions: Map<string, Point>;
   switch (input.kind) {
     case 'grouped':
-      positions = await groupedLayout(input.nodes, links, inheritanceOnly(input.edges));
+      positions = await groupedLayout(input.nodes, links, inheritanceOnly(input.edges), countGroupLinks(input));
       break;
     case 'hierarchy':
       positions = await layeredLayout(input.nodes, inheritanceOnly(input.edges));
@@ -56,6 +57,7 @@ async function groupedLayout(
   nodes: LayoutNodeInput[],
   links: DirectedLink[],
   inheritanceLinks: DirectedLink[],
+  groupLinks: GroupLink[],
 ): Promise<Map<string, Point>> {
   const nodesByGroup = new Map<string, LayoutNodeInput[]>();
   for (const node of nodes) {
@@ -72,8 +74,8 @@ async function groupedLayout(
     const members = nodesByGroup.get(group)!;
     const memberIds = new Set(members.map((member) => member.id));
     // Large groups are layered by inheritance only, for the reason given in inheritanceOnly().
-    const groupLinks = members.length > LARGE_GROUP_SIZE ? inheritanceLinks : links;
-    const internalLinks = groupLinks.filter((link) => memberIds.has(link.from) && memberIds.has(link.to));
+    const candidateLinks = members.length > LARGE_GROUP_SIZE ? inheritanceLinks : links;
+    const internalLinks = candidateLinks.filter((link) => memberIds.has(link.from) && memberIds.has(link.to));
     const positions = await layeredLayout(members, internalLinks);
     localPositions.set(group, positions);
     const contentWidth = Math.max(...members.map((member) => positions.get(member.id)!.x + member.width));
@@ -85,8 +87,8 @@ async function groupedLayout(
     });
   }
 
-  // 2. Pack the group boxes, then move each member into its group box.
-  const groupPositions = await packBoxes(groupBoxes);
+  // 2. Pack the group boxes, related groups close together, then move each member into its group box.
+  const groupPositions = await packGroups(groupBoxes, groupLinks);
   const positions = new Map<string, Point>();
   for (const [group, members] of localPositions) {
     const groupOrigin = groupPositions.get(group)!;
@@ -98,6 +100,24 @@ async function groupedLayout(
     }
   }
   return positions;
+}
+
+/** Counts the relations between the classes of each pair of groups. */
+function countGroupLinks(input: LayoutInput): GroupLink[] {
+  const groupOf = new Map(input.nodes.map((node) => [node.id, node.group]));
+  const weights = new Map<string, GroupLink>();
+  for (const edge of input.affinityEdges) {
+    const from = groupOf.get(edge.from);
+    const to = groupOf.get(edge.to);
+    if (from === undefined || to === undefined || from === to) {
+      continue;
+    }
+    const key = from < to ? `${from}|${to}` : `${to}|${from}`;
+    const link = weights.get(key) ?? { from, to, weight: 0 };
+    link.weight++;
+    weights.set(key, link);
+  }
+  return Array.from(weights.values());
 }
 
 interface ForceNode extends SimulationNodeDatum {

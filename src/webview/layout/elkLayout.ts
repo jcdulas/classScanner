@@ -23,8 +23,12 @@ export interface DirectedLink {
 
 const elk = new ELK();
 
+/** ELK adds a margin of 12 units around a layout by default; positions here start at (0, 0). */
+const NO_PADDING = '[top=0,left=0,bottom=0,right=0]';
+
 const LAYERED_OPTIONS: LayoutOptions = {
   'elk.algorithm': 'layered',
+  'elk.padding': NO_PADDING,
   'elk.direction': 'DOWN',
   'elk.spacing.nodeNode': '30',
   'elk.layered.spacing.nodeNodeBetweenLayers': '60',
@@ -38,6 +42,7 @@ const LAYERED_OPTIONS: LayoutOptions = {
 
 const PACKING_OPTIONS: LayoutOptions = {
   'elk.algorithm': 'rectpacking',
+  'elk.padding': NO_PADDING,
   'elk.aspectRatio': '1.6',
   'elk.spacing.nodeNode': '60',
 };

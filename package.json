@@ -51,6 +51,11 @@
         "category": "classScanner"
       },
       {
+        "command": "classScanner.changeDepth",
+        "title": "Change Scan Depth",
+        "category": "classScanner"
+      },
+      {
         "command": "classScanner.exportDiagram",
         "title": "Export Diagram",
         "category": "classScanner"
@@ -72,6 +77,10 @@
         {
           "command": "classScanner.exportDiagram",
           "when": "classScanner.diagramIsActive"
+        },
+        {
+          "command": "classScanner.changeDepth",
+          "when": "classScanner.diagramIsActive"
         }
       ]
     },
@@ -82,7 +91,7 @@
           "type": "integer",
           "default": -1,
           "minimum": -1,
-          "description": "Folder depth suggested on the first scan. 0 scans only the files directly in the folder, -1 means unlimited."
+          "description": "Folder depth suggested the first time a folder is scanned. 0 scans only the files directly in the folder, -1 means unlimited."
         },
         "classScanner.extensions": {
           "type": "array",
@@ -150,6 +159,11 @@
             "compose"
           ],
           "description": "Relation types taken into account when computing a layout."
+        },
+        "classScanner.rescanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Scan the folder of an open diagram again when one of its C++ files is saved."
         }
       }
     }

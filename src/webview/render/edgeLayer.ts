@@ -5,14 +5,14 @@
 // contains every line of that kind, stroked once, then every decoration,
 // filled once. Toggling a relation kind only shows or hides its batch.
 //
-// Line widths are given in screen pixels and converted to world units with
-// the current zoom, so the batches are rebuilt when the zoom changes a lot
-// (see DiagramRenderer).
+// The path of each edge comes from src/webview/model/edgeRouting.ts. Line
+// widths are given in screen pixels and converted to world units with the
+// current zoom, so the batches are rebuilt when the zoom changes a lot (see
+// DiagramRenderer).
 
 import { BitmapText, Container, Graphics } from 'pixi.js';
 import { ALL_RELATION_KINDS, RelationKind } from '../../shared/graphModel';
 import { Point } from '../../shared/savedState';
-import { Rect, rectCenter } from '../model/geometry';
 import {
   DASH_PATTERNS,
   EDGE_STYLES,
@@ -26,6 +26,8 @@ import {
   edgeSegment,
   lineEndBeforeDecoration,
 } from '../model/edgeGeometry';
+import { RoutedEdge, RoutingStyle, routeEdges } from '../model/edgeRouting';
+import { Rect } from '../model/geometry';
 import { AggregatedLink, DisplayedEdges, IndividualEdge } from '../model/sceneGeometry';
 import { CARD_FONTS } from './fonts';
 import { Theme } from './theme';
@@ -36,10 +38,19 @@ const AGGREGATED_ALPHA = 0.35;
 /** The edges of the selected classes are drawn this much thicker. */
 const HIGHLIGHT_WIDTH_FACTOR = 1.6;
 const MAX_DASHES_PER_BATCH = 20_000;
+/** Radius of the rounded corners of orthogonal edges, in diagram units. */
+const CORNER_RADIUS = 7;
+/**
+ * A rounded corner is drawn with about ten small segments. Batches with more edges than this
+ * get square corners, which cannot be told apart when that many edges are on screen.
+ */
+const MAX_ROUNDED_EDGES = 2000;
 
 export class EdgeLayer {
   readonly container = new Container();
   private readonly batches = new Map<RelationKind, Graphics>();
+  /** The paths drawn in each batch, kept to draw the highlighted edges exactly over them. */
+  private readonly routesByKind = new Map<RelationKind, RoutedEdge[]>();
   private readonly aggregatedGraphics = new Graphics();
   private readonly highlightGraphics = new Graphics();
   private readonly labels = new Container();
@@ -67,14 +78,17 @@ export class EdgeLayer {
     theme: Theme,
     scale: number,
     visibleArea: Rect | undefined,
+    routingStyle: RoutingStyle,
   ): void {
     const byKind = groupByKind(displayed.individual);
     for (const kind of kinds) {
+      const routes = routeEdges(byKind.get(kind) ?? [], kind, routingStyle);
+      this.routesByKind.set(kind, routes);
       const graphics = this.batches.get(kind)!;
       graphics.clear();
-      drawEdgeBatch(graphics, byKind.get(kind) ?? [], kind, theme.relationColors[kind], theme, scale, 1, visibleArea);
+      drawEdgeBatch(graphics, routes, kind, theme.relationColors[kind], theme, scale, 1, visibleArea);
       if (kind === 'friend') {
-        this.drawFriendLabels(byKind.get('friend') ?? [], theme);
+        this.drawFriendLabels(routes, theme);
       }
     }
   }
@@ -100,10 +114,14 @@ export class EdgeLayer {
   }
 
   /** Draws the edges of the selected classes on top of the others, in the accent color. */
-  rebuildHighlight(edges: IndividualEdge[], theme: Theme, scale: number): void {
+  rebuildHighlight(selection: Set<string>, activeKinds: Set<RelationKind>, theme: Theme, scale: number): void {
     this.highlightGraphics.clear();
-    for (const [kind, items] of groupByKind(edges)) {
-      drawEdgeBatch(this.highlightGraphics, items, kind, theme.accent, theme, scale, HIGHLIGHT_WIDTH_FACTOR, undefined);
+    if (selection.size === 0) {
+      return;
+    }
+    for (const kind of activeKinds) {
+      const routes = (this.routesByKind.get(kind) ?? []).filter((route) => selection.has(route.edge.from) || selection.has(route.edge.to));
+      drawEdgeBatch(this.highlightGraphics, routes, kind, theme.accent, theme, scale, HIGHLIGHT_WIDTH_FACTOR, undefined);
     }
   }
 
@@ -127,10 +145,10 @@ export class EdgeLayer {
     }
   }
 
-  private drawFriendLabels(friendEdges: IndividualEdge[], theme: Theme): void {
+  private drawFriendLabels(friendRoutes: RoutedEdge[], theme: Theme): void {
     this.labels.removeChildren().forEach((child) => child.destroy());
-    for (const item of friendEdges.slice(0, MAX_FRIEND_LABELS)) {
-      const middle = midpoint(rectCenter(item.source), rectCenter(item.target));
+    for (const route of friendRoutes.slice(0, MAX_FRIEND_LABELS)) {
+      const middle = middleOfPath(route.points);
       const label = new BitmapText({ text: '«friend»', style: { fontFamily: CARD_FONTS.italic, fontSize: 11 } });
       label.tint = theme.relationColors.friend;
       label.position.set(middle.x + 4, middle.y - 14);
@@ -145,7 +163,7 @@ export class EdgeLayer {
  */
 function drawEdgeBatch(
   graphics: Graphics,
-  edges: IndividualEdge[],
+  routes: RoutedEdge[],
   kind: RelationKind,
   color: number,
   theme: Theme,
@@ -153,7 +171,7 @@ function drawEdgeBatch(
   widthFactor: number,
   visibleArea: Rect | undefined,
 ): void {
-  if (edges.length === 0) {
+  if (routes.length === 0) {
     return;
   }
   const style = EDGE_STYLES[kind];
@@ -162,24 +180,29 @@ function drawEdgeBatch(
   const closedDecorations: number[][] = [];
   const circles: Point[] = [];
 
-  const shapes = edges.map((item) => {
-    const segment = edgeSegment(item.source, item.target);
+  const shapes = routes.map((route) => {
     // The decoration sits at the `from` end for composition, aggregation and nesting.
-    const tip = style.decorationAtSource ? segment.start : segment.end;
-    const tail = style.decorationAtSource ? segment.end : segment.start;
-    const line = { start: tail, end: lineEndBeforeDecoration(style.decoration, tail, tip, decorationSize) };
-    return { line, polygon: decorationPolygon(style.decoration, tail, tip, decorationSize) };
+    const points = route.points;
+    const tipIndex = style.decorationAtSource ? 0 : points.length - 1;
+    const tailIndex = style.decorationAtSource ? 1 : points.length - 2;
+    const linePoints = [...points];
+    // The line stops where a closed decoration starts, so that it does not cross it.
+    linePoints[tipIndex] = lineEndBeforeDecoration(style.decoration, points[tailIndex], points[tipIndex], decorationSize);
+    return { linePoints, polygon: decorationPolygon(style.decoration, points[tailIndex], points[tipIndex], decorationSize) };
   });
-  const dashPattern = chooseDashPattern(style.line, shapes.map((shape) => shape.line), scale, visibleArea);
+  const dashPattern = chooseDashPattern(style.line, shapes, scale, visibleArea);
+  const cornerRadius = routes.length <= MAX_ROUNDED_EDGES ? CORNER_RADIUS : 0;
 
-  for (const { line, polygon } of shapes) {
+  for (const { linePoints, polygon } of shapes) {
     if (dashPattern === undefined) {
-      graphics.moveTo(line.start.x, line.start.y).lineTo(line.end.x, line.end.y);
+      drawPolyline(graphics, linePoints, cornerRadius);
     } else {
-      const visiblePart = visibleArea === undefined ? line : clipSegmentToRect(line, visibleArea);
-      if (visiblePart !== undefined) {
-        for (const dash of dashSegments(visiblePart, dashPattern[0] / scale, dashPattern[1] / scale)) {
-          graphics.moveTo(dash.start.x, dash.start.y).lineTo(dash.end.x, dash.end.y);
+      for (const leg of legsOf(linePoints)) {
+        const visiblePart = visibleArea === undefined ? leg : clipSegmentToRect(leg, visibleArea);
+        if (visiblePart !== undefined) {
+          for (const dash of dashSegments(visiblePart, dashPattern[0] / scale, dashPattern[1] / scale)) {
+            graphics.moveTo(dash.start.x, dash.start.y).lineTo(dash.end.x, dash.end.y);
+          }
         }
       }
     }
@@ -192,7 +215,7 @@ function drawEdgeBatch(
       closedDecorations.push(polygon);
     }
   }
-  const alpha = lineAlphaForCount(edges.length);
+  const alpha = lineAlphaForCount(routes.length);
   graphics.stroke({ width: lineWidth, color, alpha });
 
   if (closedDecorations.length > 0) {
@@ -221,6 +244,34 @@ function drawEdgeBatch(
   }
 }
 
+/** Adds a path through `points` to the current path, with corners rounded by `cornerRadius`. */
+function drawPolyline(graphics: Graphics, points: Point[], cornerRadius: number): void {
+  graphics.moveTo(points[0].x, points[0].y);
+  for (let index = 1; index < points.length - 1; index++) {
+    const corner = points[index];
+    const radius = Math.min(cornerRadius, distance(points[index - 1], corner) / 2, distance(corner, points[index + 1]) / 2);
+    if (radius < 1) {
+      graphics.lineTo(corner.x, corner.y);
+      continue;
+    }
+    // The line stops `radius` before the corner, and a curve joins it to the next segment.
+    const before = pointToward(corner, points[index - 1], radius);
+    const after = pointToward(corner, points[index + 1], radius);
+    graphics.lineTo(before.x, before.y).quadraticCurveTo(corner.x, corner.y, after.x, after.y);
+  }
+  const last = points[points.length - 1];
+  graphics.lineTo(last.x, last.y);
+}
+
+/** The straight segments of a path. */
+function legsOf(points: Point[]): Segment[] {
+  const legs: Segment[] = [];
+  for (let index = 0; index + 1 < points.length; index++) {
+    legs.push({ start: points[index], end: points[index + 1] });
+  }
+  return legs;
+}
+
 /**
  * Dashes are drawn one by one, which is costly: a batch that would need more than
  * MAX_DASHES_PER_BATCH dashes is drawn with solid lines instead. With that many edges on
@@ -228,7 +279,7 @@ function drawEdgeBatch(
  */
 function chooseDashPattern(
   lineStyle: LineStyle,
-  lines: Segment[],
+  shapes: { linePoints: Point[] }[],
   scale: number,
   visibleArea: Rect | undefined,
 ): [number, number] | undefined {
@@ -238,10 +289,12 @@ function chooseDashPattern(
   }
   const periodInWorld = (pattern[0] + pattern[1]) / scale;
   let dashCount = 0;
-  for (const line of lines) {
-    const visiblePart = visibleArea === undefined ? line : clipSegmentToRect(line, visibleArea);
-    if (visiblePart !== undefined) {
-      dashCount += Math.hypot(visiblePart.end.x - visiblePart.start.x, visiblePart.end.y - visiblePart.start.y) / periodInWorld;
+  for (const shape of shapes) {
+    for (const leg of legsOf(shape.linePoints)) {
+      const visiblePart = visibleArea === undefined ? leg : clipSegmentToRect(leg, visibleArea);
+      if (visiblePart !== undefined) {
+        dashCount += distance(visiblePart.start, visiblePart.end) / periodInWorld;
+      }
     }
     if (dashCount > MAX_DASHES_PER_BATCH) {
       return undefined;
@@ -273,6 +326,27 @@ function groupByKind(edges: IndividualEdge[]): Map<RelationKind, IndividualEdge[
   return byKind;
 }
 
-function midpoint(first: Point, second: Point): Point {
-  return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+/** The point halfway along a path, measured along its segments. */
+function middleOfPath(points: Point[]): Point {
+  const legs = legsOf(points);
+  const halfLength = legs.reduce((total, leg) => total + distance(leg.start, leg.end), 0) / 2;
+  let walked = 0;
+  for (const leg of legs) {
+    const length = distance(leg.start, leg.end);
+    if (walked + length >= halfLength && length > 0) {
+      return pointToward(leg.start, leg.end, halfLength - walked);
+    }
+    walked += length;
+  }
+  return points[0];
+}
+
+function distance(first: Point, second: Point): number {
+  return Math.hypot(second.x - first.x, second.y - first.y);
+}
+
+/** The point at `length` from `from`, in the direction of `to`. */
+function pointToward(from: Point, to: Point, length: number): Point {
+  const total = distance(from, to) || 1;
+  return { x: from.x + ((to.x - from.x) * length) / total, y: from.y + ((to.y - from.y) * length) / total };
 }

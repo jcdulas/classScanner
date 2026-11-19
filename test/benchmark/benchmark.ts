@@ -46,12 +46,12 @@ async function main(): Promise<void> {
   const edges = graph.edges.filter((edge) => structuralKinds.has(edge.kind));
   for (const kind of ALL_LAYOUT_KINDS) {
     const layoutStart = Date.now();
-    await computeLayout({ kind, nodes, edges });
+    await computeLayout({ kind, nodes, edges, affinityEdges: graph.edges });
     console.log(`Layout ${kind}: ${Date.now() - layoutStart} ms for ${nodes.length} cards and ${edges.length} edges (target: under 5000 ms)`);
   }
   // Worst case of the grouped layout: grouping "none" puts every card in one group.
   const singleGroupStart = Date.now();
-  await computeLayout({ kind: 'grouped', nodes: nodes.map((node) => ({ ...node, group: '' })), edges });
+  await computeLayout({ kind: 'grouped', nodes: nodes.map((node) => ({ ...node, group: '' })), edges, affinityEdges: graph.edges });
   console.log(`Layout grouped, no grouping: ${Date.now() - singleGroupStart} ms (target: under 5000 ms)`);
 }
 

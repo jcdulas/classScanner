@@ -11,6 +11,7 @@ export interface ExtensionSettings {
   ignoredMacros: string[];
   maxMembersInAutoMode: number;
   structuralRelations: RelationKind[];
+  rescanOnSave: boolean;
 }
 
 export function readSettings(): ExtensionSettings {
@@ -26,5 +27,6 @@ export function readSettings(): ExtensionSettings {
     ignoredMacros: configuration.get<string[]>('ignoredMacros', []),
     maxMembersInAutoMode: Math.max(1, configuration.get<number>('maxMembersInAutoMode', 12)),
     structuralRelations,
+    rescanOnSave: configuration.get<boolean>('rescanOnSave', true),
   };
 }

@@ -25,6 +25,7 @@ import {
   isCardShown,
 } from '../model/sceneGeometry';
 import { edgeSegment } from '../model/edgeGeometry';
+import { RoutingStyle, routingStyleForLayout } from '../model/edgeRouting';
 import { ChangeTopic, DiagramStore, LevelOfDetail, StoreChange } from '../state/diagramStore';
 import { Camera, ViewInsets } from './camera';
 import { CardLayer } from './cardLayer';
@@ -255,7 +256,7 @@ export class DiagramRenderer {
       this.isWaitingToShowDiagram = true;
     }
     if (change.animatePositions && !change.topics.has('graph')) {
-      this.startLayoutAnimation();
+      this.startLayoutAnimation(change.fitView === true);
     }
   }
 
@@ -406,7 +407,7 @@ export class DiagramRenderer {
     this.edgeBuildScale = this.camera.scale;
     this.displayedEdges = computeDisplayedEdges(this.store, this.groupBoxes, this.displayedEdgesOptions());
     const activeKinds = this.store.activeRelations;
-    this.edgeLayer.rebuildBatches(activeKinds, this.displayedEdges, this.theme, this.camera.scale, this.edgeCullRect);
+    this.edgeLayer.rebuildBatches(activeKinds, this.displayedEdges, this.theme, this.camera.scale, this.edgeCullRect, this.routingStyle());
     // The batches of inactive kinds were not redrawn: they are out of date until redrawn.
     this.upToDateEdgeKinds = new Set(activeKinds);
     this.edgeLayer.showOnly(activeKinds);
@@ -422,7 +423,7 @@ export class DiagramRenderer {
     const activeKinds = this.store.activeRelations;
     this.displayedEdges = computeDisplayedEdges(this.store, this.groupBoxes, this.displayedEdgesOptions());
     const kindsToRedraw = Array.from(activeKinds).filter((kind) => !this.upToDateEdgeKinds.has(kind));
-    this.edgeLayer.rebuildBatches(kindsToRedraw, this.displayedEdges, this.theme, this.edgeBuildScale, this.edgeCullRect);
+    this.edgeLayer.rebuildBatches(kindsToRedraw, this.displayedEdges, this.theme, this.edgeBuildScale, this.edgeCullRect, this.routingStyle());
     for (const kind of kindsToRedraw) {
       this.upToDateEdgeKinds.add(kind);
     }
@@ -452,12 +453,12 @@ export class DiagramRenderer {
 
   private rebuildHighlight(): void {
     const selection = this.store.selection;
-    const highlighted =
-      selection.size === 0
-        ? []
-        : this.displayedEdges.individual.filter((item) => selection.has(item.edge.from) || selection.has(item.edge.to));
-    this.edgeLayer.rebuildHighlight(highlighted, this.theme, this.camera.scale);
+    this.edgeLayer.rebuildHighlight(selection, this.store.activeRelations, this.theme, this.edgeBuildScale);
     this.edgeLayer.setDimmed(selection.size > 0);
+  }
+
+  private routingStyle(): RoutingStyle {
+    return routingStyleForLayout(this.store.layout);
   }
 
   private focusedIdsOrNull(): Set<string> | null {
@@ -483,7 +484,9 @@ export class DiagramRenderer {
   // Animation between two layouts (spec §4.4)
   // ---------------------------------------------------------------------------
 
-  private startLayoutAnimation(): void {
+  private startLayoutAnimation(fitView: boolean): void {
+    // The group boxes of the new arrangement say which cards are shown and what to fit.
+    this.groupBoxes = computeGroupBoxes(this.store);
     const from = new Map<string, Point>();
     for (const id of this.store.visibleNodeIds) {
       const view = this.cardLayer.view(id);
@@ -498,9 +501,9 @@ export class DiagramRenderer {
     this.groupLayer.collapsedContainer.visible = false;
     // Every card is drawn during the animation, so their content is reduced to plain rectangles.
     this.cardLayer.updateCulling(new Set(), (id) => this.cardContentOf(id));
-    this.cardLayer.syncShown((id) => this.store.visibleNodeIds.has(id), this.animation.to);
-    const bounds = unionOfRects(Array.from(this.store.visibleNodeIds).flatMap((id) => cardRect(this.store, id) ?? []));
-    if (bounds !== undefined) {
+    this.cardLayer.syncShown((id) => isCardShown(this.store, this.groupBoxes, id), this.animation.to);
+    const bounds = this.shownBounds();
+    if (fitView && bounds !== undefined) {
       this.camera.animateTo(this.camera.stateToFit(bounds, this.viewInsets()), LAYOUT_ANIMATION_MS);
     }
   }
@@ -517,7 +520,7 @@ export class DiagramRenderer {
     this.cardLayer.syncPositions(animation.to, current);
     for (const id of this.store.visibleNodeIds) {
       const card = this.cardLayer.view(id);
-      if (card !== undefined) {
+      if (card !== undefined && card.container.visible) {
         card.container.renderable = true;
       }
     }
@@ -692,7 +695,7 @@ export class DiagramRenderer {
     this.edgeLayer.setLabelsReadable(true);
     this.groupLayer.updateTitleScale(1);
     this.displayedEdges = computeDisplayedEdges(this.store, this.groupBoxes);
-    this.edgeLayer.rebuildBatches(this.store.activeRelations, this.displayedEdges, this.theme, scale, undefined);
+    this.edgeLayer.rebuildBatches(this.store.activeRelations, this.displayedEdges, this.theme, scale, undefined, this.routingStyle());
     this.edgeLayer.rebuildAggregated(this.displayedEdges, this.theme, scale);
     this.rebuildHighlight();
     // Render in world coordinates: the camera transform is removed while exporting.

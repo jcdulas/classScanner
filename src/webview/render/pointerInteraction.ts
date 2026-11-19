@@ -145,8 +145,9 @@ export class PointerInteraction {
     } else {
       this.gesture = { kind: 'pan', lastScreen: pressed.startScreen };
     }
-    // Apply the movement made since the press.
+    // Apply the movement made since the press. The whole drag is one step for "undo".
     if (this.gesture.kind === 'moveNodes') {
+      store.rememberForUndo();
       store.moveNodes(this.gesture.ids, world.x - startWorld.x, world.y - startWorld.y);
       this.gesture.lastWorld = world;
     }
@@ -202,7 +203,7 @@ export class PointerInteraction {
     if (target?.kind === 'card') {
       this.context.store.cycleDisplayMode(target.id);
     } else if (target !== undefined) {
-      this.context.store.toggleGroupCollapsed(target.key);
+      void this.context.store.toggleGroupCollapsed(target.key);
     }
   }
 

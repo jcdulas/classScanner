@@ -26,6 +26,7 @@ export async function run(): Promise<void> {
   await mkdir(OUTPUT_FOLDER, { recursive: true });
 
   await testFixtureProject(api);
+  await testRescanOnSave(api);
   await testSyntheticProjectIfPresent(api);
 
   assert.deepEqual(webviewErrors, [], 'The webview reported no error');
@@ -78,6 +79,31 @@ async function testFixtureProject(api: ClassScannerApi): Promise<void> {
     assert.deepEqual(Object.keys(unzipSync(await readFile(zipPath))).sort(), [...expectedNames].sort());
   }
   console.log(`Fixture project shown, layout in ${Math.round(info.layoutDurationMs)} ms.`);
+}
+
+/** Saving a C++ file of the scanned folder scans it again and shows the diagram again (spec §2.1). */
+async function testRescanOnSave(api: ClassScannerApi): Promise<void> {
+  const file = vscode.Uri.file(path.join(PROJECT_ROOT, 'test', 'fixtures', 'project', 'top.hpp'));
+  const document = await vscode.workspace.openTextDocument(file);
+  const originalText = document.getText();
+  const replaceContent = async (text: string) => {
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(file, new vscode.Range(0, 0, document.lineCount, 0), text);
+    await vscode.workspace.applyEdit(edit);
+    await document.save();
+  };
+  const shown = waitForEvent(api.onDiagramShown, 30_000);
+  try {
+    await replaceContent(originalText + 'class AddedBySave {};\n');
+    const info = await shown;
+    // The new class is in the diagram: 11 visible classes became 12.
+    assert.equal(info.visibleNodeCount, 12);
+  } finally {
+    const restored = waitForEvent(api.onDiagramShown, 30_000);
+    await replaceContent(originalText);
+    await restored;
+  }
+  console.log('Rescan on save: the diagram followed a saved file.');
 }
 
 async function testSyntheticProjectIfPresent(api: ClassScannerApi): Promise<void> {
