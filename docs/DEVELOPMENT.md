@@ -15,7 +15,7 @@ npm run generate:synthetic # creates test/synthetic-project (1500 classes)
 npm run benchmark          # scan and layout times on the synthetic project
 npm run preview            # screenshot of the webview in a headless browser, in out/preview/
 npm run icon               # renders assets/icon.svg to assets/icon.png
-npm run package            # production build and .vsix
+npm run package            # increments the patch version, then production build and .vsix
 ```
 
 Press F5 in VS Code to start an Extension Development Host with the extension loaded.
@@ -25,6 +25,10 @@ Press F5 in VS Code to start an Extension Development Host with the extension lo
 - `npm run typecheck` and `npm test` after every change.
 - `npm run test:integration` after a change to the extension host or the webview. It runs the real webview in VS Code 1.130.0, the oldest supported version, and writes PNG, SVG, schema and zip exports to `out/integration/`. When the synthetic project exists, it also measures frame rates and relation toggle times. To test the current VS Code instead, run `npm run build`, then `node scripts/runIntegrationTests.mjs --vscode-version stable`.
 - `npm run preview` after a change to the user interface or the drawing. It is the only way to see the HTML controls without starting VS Code. Options: `--theme dark|light`, `--scenario default|selection|zoom|menu|zoomAt`, `--relations all`, `--size 1000x700`, `--folder test/synthetic-project`, `--output file.png`.
+
+## Building a package
+
+Every `.vsix` has its own version number. `npm run package` increments the patch version in `package.json`, builds the production bundles and writes `class-scanner-<version>.vsix`. Before running it, describe the changes of the new version at the top of [CHANGELOG.md](../CHANGELOG.md), then commit the version change with the work.
 
 ## Screenshots of the README
 

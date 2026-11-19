@@ -2,7 +2,7 @@
   "name": "class-scanner",
   "displayName": "classScanner: C++ Class Diagrams",
   "description": "Interactive class diagrams of C++ code, smooth beyond 1000 classes. Scan a folder, explore the relations, export for docs or for an LLM.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "jcdulas",
   "license": "BSD-3-Clause",
   "icon": "assets/icon.png",
@@ -166,7 +166,7 @@
     "preview": "npm run build && node scripts/previewWebview.mjs",
     "icon": "node scripts/renderIcon.mjs",
     "generate:synthetic": "node scripts/generateSyntheticProject.mjs",
-    "package": "npm run build -- --production && vsce package --no-dependencies",
+    "package": "npm version patch --no-git-tag-version && vsce package --no-dependencies",
     "vscode:prepublish": "npm run build -- --production"
   },
   "dependencies": {

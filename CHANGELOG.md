@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Extension icon.
+- Rewritten extension page: quick start, features with screenshots, commands, settings.
+
 ## 0.1.0
 
 First version.

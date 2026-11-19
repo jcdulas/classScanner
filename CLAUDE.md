@@ -17,7 +17,7 @@ npm run generate:synthetic # creates test/synthetic-project (1500 classes)
 npm run benchmark          # scan and layout times on the synthetic project
 npm run preview            # screenshot of the webview in headless Chrome, written to out/preview/
 npm run icon               # renders assets/icon.svg to assets/icon.png (the extension icon)
-npm run package            # production build and .vsix
+npm run package            # increments the patch version, then production build and .vsix
 ```
 
 Run `npm run typecheck` and `npm test` after every change. Run `npm run test:integration` after any change to the extension host or the webview: it is the only test that runs the real webview. It writes PNG, SVG, schema and zip files to `out/integration/`; look at the PNG files to check the rendering. When the synthetic project exists, it also measures frame rates and relation toggle times (spec §8).
@@ -25,6 +25,15 @@ Run `npm run typecheck` and `npm test` after every change. Run `npm run test:int
 After any change to the user interface or to the drawing, run `npm run preview` and look at the screenshot: it is the only way to see the HTML controls, which the PNG exports of the integration tests do not contain. Options: `--theme dark|light`, `--scenario default|selection|zoom|menu|zoomAt` (scripted mouse actions, see `test/preview/harness.html`), `--relations all`, `--size 1000x700`, `--folder test/synthetic-project`, `--output file.png`.
 
 Press F5 in VS Code to try the extension by hand.
+
+## Versions and packages
+
+Every `.vsix` gets its own version number: never build two different packages with the same version.
+
+- `npm run package` increments the patch version in `package.json` (0.1.1 becomes 0.1.2) before building. Do not call `vsce package` directly.
+- Before running it, add a section for the new version at the top of [CHANGELOG.md](CHANGELOG.md) with the user-visible changes since the previous package.
+- Commit the version change (`package.json`, `package-lock.json`, `CHANGELOG.md`) with the work it packages.
+- For a larger step, set the version by hand first (`npm version minor --no-git-tag-version`), then build with `npx vsce package --no-dependencies`.
 
 ## Language
 
