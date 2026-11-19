@@ -1,0 +1,281 @@
+// One diagram panel: a webview that shows the class diagram of one scanned folder.
+//
+// The panel runs the scan, sends the graph and the saved arrangement to the
+// webview, and answers the webview's requests (open a file, save the
+// arrangement, export). Communication goes through the typed messages of
+// src/shared/messages.ts.
+
+import path from 'node:path';
+import * as vscode from 'vscode';
+import { ScanCancelledError, createWorkerParseFunction } from '../scanner/parserPool';
+import { ScanResult, scanFolder } from '../scanner/scanFolder';
+import { ExportFormat, ExportScope, FrameStatistics, HostToWebviewMessage, WebviewToHostMessage } from '../shared/messages';
+import { SavedDiagramState } from '../shared/savedState';
+import { readSettings } from './configuration';
+import { logScanReport } from './scanReportLog';
+import { StateStore } from './stateStore';
+import { buildWebviewHtml } from './webviewHtml';
+
+export const DIAGRAM_VIEW_TYPE = 'classScanner.diagram';
+
+export interface ScanTarget {
+  folder: string;
+  depth: number;
+}
+
+/** Services shared by every panel, created once in extension.ts. */
+export interface PanelServices {
+  extensionUri: vscode.Uri;
+  globalStorageFolder: string;
+  output: vscode.OutputChannel;
+  onDidBecomeActive: (panel: DiagramPanel) => void;
+  onDidDispose: (panel: DiagramPanel) => void;
+  onDiagramShown: (info: { visibleNodeCount: number; layoutDurationMs: number }) => void;
+  onWebviewError: (message: string) => void;
+}
+
+interface PendingExport {
+  resolve: (data: string) => void;
+  reject: (error: Error) => void;
+}
+
+export class DiagramPanel {
+  private target: ScanTarget;
+  private stateStore: StateStore;
+  private isWebviewReady = false;
+  /** The graph message waits here when the scan finishes before the webview has loaded. */
+  private pendingGraphMessage: HostToWebviewMessage | undefined;
+  private pendingExport: PendingExport | undefined;
+  private scanCancellation: vscode.CancellationTokenSource | undefined;
+  /** Files of the last graph sent; the webview refers to files by their index in this list. */
+  private lastGraphFiles: string[] = [];
+  private pendingPerformanceMeasure: ((statistics: FrameStatistics[]) => void) | undefined;
+  private readonly disposables: vscode.Disposable[] = [];
+
+  constructor(
+    readonly webviewPanel: vscode.WebviewPanel,
+    target: ScanTarget,
+    private readonly services: PanelServices,
+  ) {
+    this.target = target;
+    this.stateStore = new StateStore(target.folder, services.globalStorageFolder);
+    const distFolder = vscode.Uri.joinPath(services.extensionUri, 'dist', 'webview');
+    webviewPanel.webview.options = { enableScripts: true, localResourceRoots: [distFolder] };
+    webviewPanel.webview.html = buildWebviewHtml(webviewPanel.webview, services.extensionUri);
+    this.disposables.push(
+      webviewPanel.webview.onDidReceiveMessage((message: WebviewToHostMessage) => this.handleMessage(message)),
+      webviewPanel.onDidChangeViewState(() => {
+        if (webviewPanel.active) {
+          services.onDidBecomeActive(this);
+        }
+      }),
+      webviewPanel.onDidDispose(() => this.dispose()),
+    );
+  }
+
+  static create(target: ScanTarget, services: PanelServices): DiagramPanel {
+    const webviewPanel = vscode.window.createWebviewPanel(
+      DIAGRAM_VIEW_TYPE,
+      panelTitle(target.folder),
+      vscode.ViewColumn.Active,
+      {
+        enableScripts: true,
+        // Keeps the WebGL scene alive when the tab is hidden, so switching tabs does not recompute the layout.
+        retainContextWhenHidden: true,
+      },
+    );
+    return new DiagramPanel(webviewPanel, target, services);
+  }
+
+  get folder(): string {
+    return this.target.folder;
+  }
+
+  reveal(): void {
+    this.webviewPanel.reveal();
+  }
+
+  /** Runs a complete scan, then sends the graph to the webview (spec §2.1). */
+  async scan(newDepth?: number): Promise<void> {
+    if (newDepth !== undefined) {
+      this.target = { ...this.target, depth: newDepth };
+    }
+    this.scanCancellation?.cancel();
+    const cancellation = new vscode.CancellationTokenSource();
+    this.scanCancellation = cancellation;
+    this.post({ type: 'scanStarted', folder: this.target.folder, depth: this.target.depth });
+
+    try {
+      const result = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'classScanner', cancellable: true },
+        (progress, progressToken) => {
+          progressToken.onCancellationRequested(() => cancellation.cancel());
+          return this.runScan(progress, cancellation.token);
+        },
+      );
+      logScanReport(this.services.output, result.report);
+      await this.sendGraph(result);
+    } catch (error) {
+      if (error instanceof ScanCancelledError) {
+        this.post({ type: 'scanFailed', message: 'The scan was cancelled.' });
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      this.services.output.appendLine(`Scan failed: ${message}`);
+      this.post({ type: 'scanFailed', message });
+      void vscode.window.showErrorMessage(`classScanner: the scan failed. ${message}`);
+    }
+  }
+
+  /** Asks the webview for export data: base64 PNG or SVG text. */
+  requestExport(format: ExportFormat, scope: ExportScope, scale: number): Promise<string> {
+    this.pendingExport?.reject(new Error('Replaced by a newer export'));
+    return new Promise((resolve, reject) => {
+      this.pendingExport = { resolve, reject };
+      this.post({ type: 'exportRequest', format, scope, scale });
+    });
+  }
+
+  /** Asks the webview to measure frame times while panning (spec §8). Used by the integration tests. */
+  measurePerformance(): Promise<FrameStatistics[]> {
+    return new Promise((resolve) => {
+      this.pendingPerformanceMeasure = resolve;
+      this.post({ type: 'measurePerformance' });
+    });
+  }
+
+  dispose(): void {
+    this.scanCancellation?.cancel();
+    this.pendingExport?.reject(new Error('The diagram was closed'));
+    for (const disposable of this.disposables) {
+      disposable.dispose();
+    }
+    this.services.onDidDispose(this);
+  }
+
+  private runScan(
+    progress: vscode.Progress<{ message?: string; increment?: number }>,
+    token: vscode.CancellationToken,
+  ): Promise<ScanResult> {
+    const settings = readSettings();
+    const workerScript = vscode.Uri.joinPath(this.services.extensionUri, 'dist', 'parserWorker.js').fsPath;
+    let lastReportedPercent = 0;
+    progress.report({ message: `Listing files in ${path.basename(this.target.folder)}...` });
+
+    return scanFolder({
+      folder: this.target.folder,
+      discovery: {
+        maxDepth: this.target.depth,
+        extensions: settings.extensions,
+        exclude: settings.exclude,
+        maxFileSizeBytes: settings.maxFileSizeKB * 1024,
+      },
+      parseFiles: createWorkerParseFunction(workerScript, { ignoredMacros: settings.ignoredMacros }),
+      isCancelled: () => token.isCancellationRequested,
+      onProgress: (parsedFileCount, totalFileCount) => {
+        const percent = Math.floor((parsedFileCount / Math.max(1, totalFileCount)) * 100);
+        progress.report({ message: `Parsing ${parsedFileCount} / ${totalFileCount} files`, increment: percent - lastReportedPercent });
+        lastReportedPercent = percent;
+        this.post({ type: 'scanProgress', parsedFileCount, totalFileCount });
+      },
+    });
+  }
+
+  private async sendGraph(result: ScanResult): Promise<void> {
+    const settings = readSettings();
+    const savedFile = await this.stateStore.read();
+    let savedState: SavedDiagramState | undefined;
+    if (savedFile !== undefined) {
+      // The scan information is only needed by the host; the webview gets the rest.
+      const { scan: _scan, ...state } = savedFile;
+      savedState = state;
+    }
+    this.post({
+      type: 'graph',
+      graph: result.graph,
+      report: result.report,
+      savedState,
+      settings: {
+        maxMembersInAutoMode: settings.maxMembersInAutoMode,
+        structuralRelations: settings.structuralRelations,
+      },
+    });
+  }
+
+  private handleMessage(message: WebviewToHostMessage): void {
+    switch (message.type) {
+      case 'ready':
+        this.isWebviewReady = true;
+        if (this.pendingGraphMessage !== undefined) {
+          void this.webviewPanel.webview.postMessage(this.pendingGraphMessage);
+          this.pendingGraphMessage = undefined;
+        }
+        return;
+      case 'openSource':
+        void this.openSource(message.file, message.line);
+        return;
+      case 'saveState':
+        this.stateStore.write(message.state, this.target.depth).catch((error: unknown) => {
+          this.services.output.appendLine(`Could not save the diagram arrangement: ${String(error)}`);
+        });
+        return;
+      case 'rescan':
+        void this.scan();
+        return;
+      case 'startExport':
+        void vscode.commands.executeCommand('classScanner.exportDiagram');
+        return;
+      case 'showReport':
+        this.services.output.show(true);
+        return;
+      case 'exportResult':
+        this.pendingExport?.resolve(message.data);
+        this.pendingExport = undefined;
+        return;
+      case 'exportFailed':
+        this.pendingExport?.reject(new Error(message.message));
+        this.pendingExport = undefined;
+        return;
+      case 'performanceResult':
+        this.pendingPerformanceMeasure?.(message.statistics);
+        this.pendingPerformanceMeasure = undefined;
+        return;
+      case 'diagramShown':
+        this.services.onDiagramShown({ visibleNodeCount: message.visibleNodeCount, layoutDurationMs: message.layoutDurationMs });
+        return;
+      case 'error':
+        this.services.output.appendLine(`Webview error: ${message.message}${message.stack ? `\n${message.stack}` : ''}`);
+        this.services.onWebviewError(message.message);
+        return;
+    }
+  }
+
+  private async openSource(fileIndex: number, line: number): Promise<void> {
+    const relativePath = this.lastGraphFiles[fileIndex];
+    if (relativePath === undefined) {
+      return;
+    }
+    const uri = vscode.Uri.file(path.join(this.target.folder, relativePath));
+    const position = new vscode.Position(Math.max(0, line - 1), 0);
+    await vscode.window.showTextDocument(uri, {
+      viewColumn: vscode.ViewColumn.Beside,
+      selection: new vscode.Range(position, position),
+      preview: true,
+    });
+  }
+
+  private post(message: HostToWebviewMessage): void {
+    if (message.type === 'graph') {
+      this.lastGraphFiles = message.graph.files;
+      if (!this.isWebviewReady) {
+        this.pendingGraphMessage = message;
+        return;
+      }
+    }
+    void this.webviewPanel.webview.postMessage(message);
+  }
+}
+
+function panelTitle(folder: string): string {
+  return `Classes: ${path.basename(folder)}`;
+}

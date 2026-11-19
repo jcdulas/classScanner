@@ -7,6 +7,11 @@
 import path from 'node:path';
 import { createWorkerParseFunction } from '../../src/scanner/parserPool';
 import { scanFolder } from '../../src/scanner/scanFolder';
+import { RelationKind } from '../../src/shared/graphModel';
+import { ALL_LAYOUT_KINDS } from '../../src/shared/savedState';
+import { computeLayout } from '../../src/webview/layout/computeLayout';
+import { computeCardLayout } from '../../src/webview/model/cardGeometry';
+import { groupKeyOf } from '../../src/webview/model/groups';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const SYNTHETIC_PROJECT = path.join(PROJECT_ROOT, 'test', 'synthetic-project');
@@ -30,6 +35,24 @@ async function main(): Promise<void> {
   console.log(`Edges:   ${graph.edges.length} ${JSON.stringify(report.edgeCounts)}`);
   console.log(`Parse errors: ${report.parseErrorCount}, unresolved references: ${report.unresolvedTypeReferenceCount}`);
   console.log(`Scan:    ${scanDuration} ms (target: under 15000 ms)`);
+
+  // The layouts run in a web worker in the extension; the same code runs here in Node.
+  const metrics = { charWidth: 7.2 };
+  const nodes = graph.nodes.map((node) => {
+    const card = computeCardLayout(node, 'capped', 12, metrics);
+    return { id: node.id, width: card.width, height: card.height, group: groupKeyOf(node, 'namespace', graph.files) };
+  });
+  const structuralKinds = new Set<RelationKind>(['inherit', 'compose']);
+  const edges = graph.edges.filter((edge) => structuralKinds.has(edge.kind));
+  for (const kind of ALL_LAYOUT_KINDS) {
+    const layoutStart = Date.now();
+    await computeLayout({ kind, nodes, edges });
+    console.log(`Layout ${kind}: ${Date.now() - layoutStart} ms for ${nodes.length} cards and ${edges.length} edges (target: under 5000 ms)`);
+  }
+  // Worst case of the grouped layout: grouping "none" puts every card in one group.
+  const singleGroupStart = Date.now();
+  await computeLayout({ kind: 'grouped', nodes: nodes.map((node) => ({ ...node, group: '' })), edges });
+  console.log(`Layout grouped, no grouping: ${Date.now() - singleGroupStart} ms (target: under 5000 ms)`);
 }
 
 main().catch((error) => {

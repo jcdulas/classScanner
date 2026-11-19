@@ -6,6 +6,12 @@
 import { Graph, RelationKind, ScanReport } from './graphModel';
 import { SavedDiagramState } from './savedState';
 
+/** Written into the webview page by the extension host, read by the webview at startup. */
+export interface WebviewBootConfig {
+  /** URL of the layout web worker script. */
+  layoutWorkerUrl: string;
+}
+
 /** Settings the webview needs to display the diagram. */
 export interface DiagramSettings {
   maxMembersInAutoMode: number;
@@ -17,8 +23,18 @@ export type ExportFormat = 'png' | 'svg';
 /** `view`: what is visible on screen. `diagram`: the whole diagram. `selection`: the selected classes. */
 export type ExportScope = 'view' | 'diagram' | 'selection';
 
+/** Frame times measured while panning at one level of detail (spec §8, used by the integration tests). */
+export interface FrameStatistics {
+  level: string;
+  frameCount: number;
+  averageFrameMs: number;
+  /** 95% of the frames took less than this. */
+  percentile95FrameMs: number;
+}
+
 export type HostToWebviewMessage =
-  | { type: 'scanStarted'; folder: string }
+  /** `folder` and `depth` are kept by the webview so that VS Code can restore the panel after a restart. */
+  | { type: 'scanStarted'; folder: string; depth: number }
   | { type: 'scanProgress'; parsedFileCount: number; totalFileCount: number }
   | { type: 'scanFailed'; message: string }
   | {
@@ -28,7 +44,8 @@ export type HostToWebviewMessage =
       savedState: SavedDiagramState | undefined;
       settings: DiagramSettings;
     }
-  | { type: 'exportRequest'; format: ExportFormat; scope: ExportScope; scale: number };
+  | { type: 'exportRequest'; format: ExportFormat; scope: ExportScope; scale: number }
+  | { type: 'measurePerformance' };
 
 export type WebviewToHostMessage =
   | { type: 'ready' }
@@ -41,4 +58,5 @@ export type WebviewToHostMessage =
   | { type: 'exportResult'; format: ExportFormat; data: string }
   | { type: 'exportFailed'; message: string }
   | { type: 'diagramShown'; visibleNodeCount: number; layoutDurationMs: number }
+  | { type: 'performanceResult'; statistics: FrameStatistics[] }
   | { type: 'error'; message: string; stack?: string };
