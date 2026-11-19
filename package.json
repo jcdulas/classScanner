@@ -1,13 +1,22 @@
 {
   "name": "class-scanner",
-  "displayName": "classScanner",
-  "description": "Scans a folder of C++ sources and displays an interactive WebGL class diagram that stays usable beyond 1000 classes.",
+  "displayName": "classScanner: C++ Class Diagrams",
+  "description": "Interactive class diagrams of C++ code, smooth beyond 1000 classes. Scan a folder, explore the relations, export for docs or for an LLM.",
   "version": "0.1.0",
   "publisher": "jcdulas",
   "license": "BSD-3-Clause",
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#0b3a75",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/jcdulas/classScanner.git"
+  },
+  "homepage": "https://github.com/jcdulas/classScanner#readme",
+  "bugs": {
+    "url": "https://github.com/jcdulas/classScanner/issues"
   },
   "engines": {
     "vscode": "^1.130.0"
@@ -18,9 +27,12 @@
   ],
   "keywords": [
     "c++",
+    "cpp",
     "uml",
     "class diagram",
-    "webgl"
+    "architecture",
+    "visualization",
+    "llm"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
@@ -152,6 +164,7 @@
     "test:integration": "npm run build && node scripts/runIntegrationTests.mjs",
     "benchmark": "npm run build && node scripts/benchmark.mjs",
     "preview": "npm run build && node scripts/previewWebview.mjs",
+    "icon": "node scripts/renderIcon.mjs",
     "generate:synthetic": "node scripts/generateSyntheticProject.mjs",
     "package": "npm run build -- --production && vsce package --no-dependencies",
     "vscode:prepublish": "npm run build -- --production"

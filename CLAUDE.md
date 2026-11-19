@@ -2,7 +2,7 @@
 
 A VS Code extension that scans a folder of C++ sources (`.cpp`, `.hpp`, `.h`) and displays an interactive WebGL class diagram that stays usable beyond 1000 classes.
 
-The full specification is in [docs/SPEC.md](docs/SPEC.md). Read it before changing behavior, and update it in the same change whenever a decision in it changes. User documentation is in [README.md](README.md).
+The full specification is in [docs/SPEC.md](docs/SPEC.md). Read it before changing behavior, and update it in the same change whenever a decision in it changes. [README.md](README.md) is the page users see for the extension in VS Code: keep it about using the extension, and put developer documentation in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Record user-visible changes in [CHANGELOG.md](CHANGELOG.md).
 
 ## Commands
 
@@ -16,6 +16,7 @@ npm run test:integration   # builds, then runs the extension in VS Code 1.130.0
 npm run generate:synthetic # creates test/synthetic-project (1500 classes)
 npm run benchmark          # scan and layout times on the synthetic project
 npm run preview            # screenshot of the webview in headless Chrome, written to out/preview/
+npm run icon               # renders assets/icon.svg to assets/icon.png (the extension icon)
 npm run package            # production build and .vsix
 ```
 
