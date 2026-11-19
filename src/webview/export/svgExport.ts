@@ -171,7 +171,7 @@ function cardSvg(rect: Rect, layout: CardLayout, headerColor: number, theme: The
     for (const row of layout.rows) {
       const baseline = row.y + CARD_STYLE.rowHeight / 2 + 4;
       if (row.visibility !== undefined) {
-        parts.push(visibilityIconSvg(row.visibility, CARD_STYLE.paddingX + 4, row.y + CARD_STYLE.rowHeight / 2, theme));
+        parts.push(memberIconSvg(row.kind === 'method', row.visibility, CARD_STYLE.paddingX + 4, row.y + CARD_STYLE.rowHeight / 2, theme));
       }
       const isMuted = row.kind === 'more' || row.kind === 'specialization';
       const attributes = [
@@ -189,16 +189,14 @@ function cardSvg(rect: Rect, layout: CardLayout, headerColor: number, theme: The
   return parts.join('\n');
 }
 
-function visibilityIconSvg(visibility: Visibility, x: number, y: number, theme: Theme): string {
+/** A diamond for a method, a circle for an attribute, in the color of the visibility. */
+function memberIconSvg(isMethod: boolean, visibility: Visibility, x: number, y: number, theme: Theme): string {
   const color = toCssColor(theme.visibilityColors[visibility]);
-  const size = 3.5;
-  if (visibility === 'public') {
-    return `<circle cx="${x}" cy="${y}" r="${size}" fill="${color}"/>`;
+  if (isMethod) {
+    const size = 4.3;
+    return `<polygon points="${x},${y - size} ${x + size},${y} ${x},${y + size} ${x - size},${y}" fill="${color}"/>`;
   }
-  if (visibility === 'protected') {
-    return `<polygon points="${x},${y - size - 0.5} ${x + size + 0.5},${y} ${x},${y + size + 0.5} ${x - size - 0.5},${y}" fill="${color}"/>`;
-  }
-  return `<rect x="${x - size}" y="${y - size}" width="${size * 2}" height="${size * 2}" fill="${color}"/>`;
+  return `<circle cx="${x}" cy="${y}" r="3.5" fill="${color}"/>`;
 }
 
 function pointsAttribute(flatPoints: number[]): string {

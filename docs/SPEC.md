@@ -141,7 +141,8 @@ The whole interface follows a "liquid glass" style, with a VS Code touch: every 
 - **Cards**: rounded corners, a header with a top-to-bottom gradient in the color of the group (namespace or folder), a slightly see-through body, a bright rim inside the border and a soft shadow. Real blur behind 1500 cards would be too costly in WebGL, so the glass look is suggested with these cheap shapes (`src/webview/render/glassStyle.ts`).
 - **Groups**: panes of glass tinted with the group color.
 - **Background**: the canvas is transparent; the page behind it shows the editor background with soft patches of the accent colors.
-- Visibility icons for public / protected / private; italics for abstract classes and virtual methods; a badge for `struct`, `union`, `enum` and templates.
+- Each member has an icon: a diamond for a method, a circle for an attribute, in the color of its visibility (green for public, yellow for protected, red for private, taken from the theme's chart colors).
+- Italics for abstract classes and virtual methods; a badge for `struct`, `union`, `enum` and templates.
 - Colors are updated when the theme changes.
 
 ### 4.3 Compact view and full view

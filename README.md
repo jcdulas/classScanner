@@ -28,7 +28,7 @@ Seven kinds of relations, each with its own switch and its UML notation: inherit
 
 ### Your code, read as it is
 
-Classes, structs, unions, enums and templates, with their members, visibility, and `static`, `virtual`, `const` and pure virtual markers. Click a member to jump to its declaration.
+Classes, structs, unions, enums and templates, with their members, visibility, and `static`, `virtual`, `const` and pure virtual markers. Methods are marked with a diamond and attributes with a circle, colored by visibility: green for public, yellow for protected, red for private. Click a member to jump to its declaration.
 
 ### Layouts you can shape
 

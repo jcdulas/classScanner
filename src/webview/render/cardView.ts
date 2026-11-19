@@ -16,6 +16,8 @@ import { CardContent } from './levelOfDetail';
 import { Theme, contrastingTextColor } from './theme';
 
 const DIMMED_ALPHA = 0.25;
+/** Radius of the circle drawn before an attribute; the diamond of a method is slightly larger. */
+const MEMBER_ICON_SIZE = 3.5;
 
 export class CardView {
   readonly container = new Container();
@@ -238,7 +240,7 @@ export class CardView {
       content.addChild(text);
       const iconCenterY = row.y + CARD_STYLE.rowHeight / 2;
       if (row.visibility !== undefined) {
-        this.drawVisibilityIcon(icons, row.visibility, CARD_STYLE.paddingX + 4, iconCenterY);
+        this.drawMemberIcon(icons, row.kind === 'method', row.visibility, CARD_STYLE.paddingX + 4, iconCenterY);
       }
       if (row.isStatic) {
         // UML underlines static members.
@@ -249,16 +251,17 @@ export class CardView {
     }
   }
 
-  /** Public: circle, protected: diamond, private: square, each in its own color. */
-  private drawVisibilityIcon(graphics: Graphics, visibility: Visibility, x: number, y: number): void {
+  /**
+   * The icon of a member. Its shape tells what the member is: a diamond for a method, a
+   * circle for an attribute. Its color tells the visibility: public, protected or private.
+   */
+  private drawMemberIcon(graphics: Graphics, isMethod: boolean, visibility: Visibility, x: number, y: number): void {
     const color = this.theme.visibilityColors[visibility];
-    const size = 3.5;
-    if (visibility === 'public') {
-      graphics.circle(x, y, size).fill(color);
-    } else if (visibility === 'protected') {
-      graphics.poly([x, y - size - 0.5, x + size + 0.5, y, x, y + size + 0.5, x - size - 0.5, y]).fill(color);
+    if (isMethod) {
+      const size = MEMBER_ICON_SIZE + 0.8;
+      graphics.poly([x, y - size, x + size, y, x, y + size, x - size, y]).fill(color);
     } else {
-      graphics.rect(x - size, y - size, size * 2, size * 2).fill(color);
+      graphics.circle(x, y, MEMBER_ICON_SIZE).fill(color);
     }
   }
 
