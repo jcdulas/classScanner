@@ -1,0 +1,179 @@
+{
+  "name": "class-scanner",
+  "displayName": "classScanner",
+  "description": "Scans a folder of C++ sources and displays an interactive WebGL class diagram that stays usable beyond 1000 classes.",
+  "version": "0.1.0",
+  "publisher": "jcdulas",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jcdulas/classScanner.git"
+  },
+  "engines": {
+    "vscode": "^1.130.0"
+  },
+  "categories": [
+    "Visualization",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "c++",
+    "uml",
+    "class diagram",
+    "webgl"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onWebviewPanel:classScanner.diagram"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "classScanner.scanFolder",
+        "title": "Scan Folder for C++ Classes",
+        "category": "classScanner"
+      },
+      {
+        "command": "classScanner.rescan",
+        "title": "Rescan",
+        "category": "classScanner"
+      },
+      {
+        "command": "classScanner.exportDiagram",
+        "title": "Export Diagram",
+        "category": "classScanner"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "classScanner.scanFolder",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation@90"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "classScanner.rescan",
+          "when": "classScanner.diagramIsActive"
+        },
+        {
+          "command": "classScanner.exportDiagram",
+          "when": "classScanner.diagramIsActive"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "classScanner",
+      "properties": {
+        "classScanner.maxDepth": {
+          "type": "integer",
+          "default": -1,
+          "minimum": -1,
+          "description": "Folder depth suggested on the first scan. 0 scans only the files directly in the folder, -1 means unlimited."
+        },
+        "classScanner.extensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".cpp",
+            ".hpp",
+            ".h"
+          ],
+          "description": "File extensions that are analyzed."
+        },
+        "classScanner.exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/build/**",
+            "**/out/**",
+            "**/node_modules/**",
+            "**/.git/**",
+            "**/third_party/**",
+            "**/external/**"
+          ],
+          "description": "Glob patterns, relative to the scanned folder, of files and folders to skip."
+        },
+        "classScanner.maxFileSizeKB": {
+          "type": "integer",
+          "default": 2048,
+          "minimum": 1,
+          "description": "Files larger than this size (in KB) are skipped and listed in the scan report."
+        },
+        "classScanner.ignoredMacros": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Macros removed before parsing, for example export macros such as MYLIB_API or class-body macros such as Q_OBJECT. Macros with arguments are removed together with their arguments."
+        },
+        "classScanner.maxMembersInAutoMode": {
+          "type": "integer",
+          "default": 12,
+          "minimum": 1,
+          "description": "Maximum number of member lines shown on a card in 'auto' display mode."
+        },
+        "classScanner.structuralRelations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "inherit",
+              "compose",
+              "aggregate",
+              "depend",
+              "include",
+              "friend",
+              "nest"
+            ]
+          },
+          "default": [
+            "inherit",
+            "compose"
+          ],
+          "description": "Relation types taken into account when computing a layout."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p src/webview/tsconfig.json",
+    "lint": "npm run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "npm run build && node scripts/runIntegrationTests.mjs",
+    "benchmark": "npm run build && node scripts/benchmark.mjs",
+    "generate:synthetic": "node scripts/generateSyntheticProject.mjs",
+    "package": "npm run build -- --production && vsce package --no-dependencies",
+    "vscode:prepublish": "npm run build -- --production"
+  },
+  "dependencies": {
+    "d3-force": "3.0.1",
+    "elkjs": "0.12.1",
+    "flatbush": "4.7.0",
+    "picomatch": "4.0.7",
+    "pixi.js": "8.23.0",
+    "preact": "11.2.0",
+    "tree-sitter-cpp": "0.23.4",
+    "web-tree-sitter": "0.27.2"
+  },
+  "devDependencies": {
+    "@types/d3-force": "3.0.10",
+    "@types/node": "22.20.5",
+    "@types/picomatch": "4.0.3",
+    "@types/vscode": "1.125.0",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.1.1",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3",
+    "vitest": "5.1.1"
+  }
+}
