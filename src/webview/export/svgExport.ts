@@ -12,6 +12,7 @@ import {
   EDGE_STYLES,
   aggregatedLinkWidth,
   decorationPolygon,
+  decorationSizeForScale,
   edgeSegment,
   lineEndBeforeDecoration,
 } from '../model/edgeGeometry';
@@ -22,7 +23,8 @@ import { cardContentFor } from '../render/levelOfDetail';
 import { Theme, contrastingTextColor, groupColor, toCssColor } from '../render/theme';
 import { DiagramStore } from '../state/diagramStore';
 
-const DECORATION_SIZE = 11;
+/** The SVG is drawn at a zoom of 1: one diagram unit is one pixel. */
+const DECORATION_SIZE = decorationSizeForScale(1);
 const FONT_FAMILY = 'Consolas, Menlo, "Courier New", monospace';
 
 export function buildSvg(store: DiagramStore, theme: Theme, scope: 'diagram' | 'selection'): string {
@@ -35,7 +37,7 @@ export function buildSvg(store: DiagramStore, theme: Theme, scope: 'diagram' | '
   const idSet = new Set(ids);
   // The selection export only contains cards and the edges between them.
   const groupBoxes = scope === 'diagram' ? allGroupBoxes : new Map<string, GroupBox>();
-  const displayed = computeDisplayedEdges(store, groupBoxes, 'full');
+  const displayed = computeDisplayedEdges(store, groupBoxes);
   const edges = scope === 'diagram' ? displayed.individual : displayed.individual.filter((item) => idSet.has(item.edge.from) && idSet.has(item.edge.to));
 
   const rects: Rect[] = ids.flatMap((id) => cardRect(store, id) ?? []);

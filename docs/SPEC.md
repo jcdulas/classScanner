@@ -150,6 +150,8 @@ Three levels of detail, driven by the zoom:
 | Compact | 0.2 to 0.55 | Class name, enlarged to fill the card | Class name, enlarged | All members |
 | Full | 0.55 and above | Header, attributes, methods (capped) | Header only | All members |
 
+This semantic zoom is controlled by the "Simplify cards" switch of the side panel, on by default. When it is off, cards keep the content of the Full level at every zoom level. Their text is only drawn when it is at least about 2 screen pixels tall (zoom of 0.15 and above): below that it cannot be seen, and drawing it for 1500 cards costs 20 frames per second instead of 60.
+
 Each class has a display mode: `auto` (default, follows the zoom), `compact` or `full` (pinned). At the Overview level every card is a plain rectangle whatever its mode: text would not be readable there. Pinning is done with a double-click, the context menu, or on the whole selection. Two global buttons force everything to compact or to full; a third one returns to `auto`.
 
 Card footprint in the layout:
@@ -178,8 +180,11 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 
 ### 4.5 Edge readability at scale
 
-- When a group is collapsed, or at the Overview level of the grouped layout, the edges between two groups merge into a single link whose thickness grows with the logarithm of the number of relations. Hovering shows the count per type.
-- Individual edges appear from the Compact level on, for expanded groups.
+- By default, the relations that are turned on stay visible at every zoom level: edges are not hidden or merged because the view is far away.
+- The "Merge relations" switch of the side panel, off by default, merges them when zoomed out instead: at the Overview level of the grouped layout, the edges between two groups become a single link, and the edges inside a group are not drawn.
+- Edges are drawn thin, so that they take little room: lines of about 1 screen pixel, whatever the zoom, and arrow heads and diamonds of 7 screen pixels. Far away, arrow heads and diamonds shrink with the cards instead of covering them.
+- When many edges of a type are on screen, they are drawn more transparent: up to 400 edges are almost opaque, and thousands form a veil that leaves the cards visible.
+- When a group is collapsed, the edges that reach it always merge into a single link per pair of groups. The thickness of a merged link grows with the logarithm of the number of relations; hovering shows the count per type.
 - Edges whose two ends are outside the viewport are not drawn.
 - Selecting a class brings its edges to the front and dims the others.
 
@@ -210,6 +215,7 @@ The diagram fills the whole view; the user interface floats above it:
 - **Top right**: rescan and export.
 - **Side panel** (left, can be hidden; each section can be folded):
   - a switch for each of the seven relation types, with its line style and edge count;
+  - "Zoomed out": the switches "Simplify cards" (§4.3) and "Merge relations" (§4.5);
   - the isolation depth;
   - filters by entity type (class, struct, union, enum, template) and display of external nodes (declarations without a definition);
   - filters by namespace and by folder (check box trees with a text filter).
@@ -307,7 +313,7 @@ interface Edge {
 ## 6. Persistence
 
 - File `.classscanner/<folder-name>-<short hash of the path>.json` at the workspace root, readable and suitable for version control.
-- Content: scan parameters (folder, depth), active layout and grouping criterion, positions per layout (indexed by qualified name), pinned display modes, collapsed groups, active relations, filters, camera.
+- Content: scan parameters (folder, depth), active layout and grouping criterion, positions per layout (indexed by qualified name), pinned display modes, collapsed groups, active relations, filters, the two zoom switches, camera.
 - After a rescan: known classes get their position back; new ones are placed near their group; entries of classes that disappeared are removed.
 - "Recompute layout" (§4.4) discards the manual positions of the current layout.
 - Outside of a workspace, the file is stored in the extension's global storage instead.
@@ -335,8 +341,8 @@ The measurements were made on the synthetic project of the test suite (`npm run 
 | Complete scan | under 15 s | 0.9 to 1.7 s |
 | Computing a layout | under 5 s, without blocking the interface | grouped 1.4 s, global hierarchy 0.4 s, organic 1.6 s |
 | Display after layout | under 1 s | not measured on its own: 1.6 to 1.9 s from the start of the scan to the diagram on screen, scan and layout included |
-| Pan and zoom | 60 frames/s | 57 to 60 frames/s at the three levels of detail, every relation type active |
-| Toggling a relation type | under 100 ms | 4 to 18 ms to turn off, 16 to 28 ms to turn on with a batch to redraw |
+| Pan and zoom | 60 frames/s | 57 to 60 frames/s at the three levels of detail, every relation type active; 60 frames/s with "Simplify cards" off |
+| Toggling a relation type | under 100 ms | with the whole diagram in view: about 20 ms to turn off, about 40 ms to turn on with a batch to redraw |
 | Search | result in under 50 ms | not measured (a linear scan of 1500 names) |
 | Webview memory | under 500 MB | not measured |
 

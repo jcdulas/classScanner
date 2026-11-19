@@ -55,6 +55,28 @@ export function SidePanel({ controller }: SidePanelProps) {
         ))}
       </Section>
 
+      <Section title="Zoomed out" summary={zoomSummary(store.simplifyCardsWhenZoomedOut, store.mergeRelationsWhenZoomedOut)}>
+        <ToggleRow
+          kind="switch"
+          isOn={store.simplifyCardsWhenZoomedOut}
+          onToggle={() => store.setSimplifyCardsWhenZoomedOut(!store.simplifyCardsWhenZoomedOut)}
+          title="On: cards show their name, then a plain tile, as you zoom out. Off: cards always show their members."
+        >
+          <span class="row-label">Simplify cards</span>
+        </ToggleRow>
+        <ToggleRow
+          kind="switch"
+          isOn={store.mergeRelationsWhenZoomedOut}
+          onToggle={() => store.setMergeRelationsWhenZoomedOut(!store.mergeRelationsWhenZoomedOut)}
+          title="On: far away, the relations between two groups merge into one link. Off: every relation stays drawn."
+        >
+          <span class="row-label">Merge relations</span>
+        </ToggleRow>
+        {!store.simplifyCardsWhenZoomedOut && (
+          <div class="hint">Cards keep their full layout at every zoom level. Their text is drawn once it is large enough to see.</div>
+        )}
+      </Section>
+
       <Section title="Isolation" summary={isolatedName}>
         <div class="inline-setting">
           <span>Neighbor levels</span>
@@ -99,6 +121,16 @@ export function SidePanel({ controller }: SidePanelProps) {
       </Section>
     </aside>
   );
+}
+
+function zoomSummary(simplifyCards: boolean, mergeRelations: boolean): string {
+  if (simplifyCards && mergeRelations) {
+    return 'cards, relations';
+  }
+  if (simplifyCards) {
+    return 'cards';
+  }
+  return mergeRelations ? 'relations' : 'off';
 }
 
 function hiddenSummary(hiddenCount: number, totalCount: number): string {

@@ -8,9 +8,9 @@
 import { Container } from 'pixi.js';
 import { Point } from '../../shared/savedState';
 import { FontMetrics } from '../model/cardGeometry';
-import { DiagramStore, LevelOfDetail } from '../state/diagramStore';
+import { DiagramStore } from '../state/diagramStore';
 import { CardView } from './cardView';
-import { cardContentFor } from './levelOfDetail';
+import { CardContent, cardContentFor } from './levelOfDetail';
 import { Theme, groupColor } from './theme';
 
 export class CardLayer {
@@ -78,8 +78,8 @@ export class CardLayer {
     }
   }
 
-  /** Makes renderable only the cards in `idsInView`, with the content of the current level of detail. */
-  updateCulling(idsInView: Set<string>, level: LevelOfDetail, store: DiagramStore): void {
+  /** Makes renderable only the cards in `idsInView`, each with the content given by `contentOf`. */
+  updateCulling(idsInView: Set<string>, contentOf: (id: string) => CardContent): void {
     if (this.isExportMode) {
       return;
     }
@@ -96,7 +96,7 @@ export class CardLayer {
       const view = this.views.get(id);
       if (view !== undefined && view.container.visible) {
         view.container.renderable = true;
-        view.setContent(cardContentFor(level, store.displayModeOf(id)));
+        view.setContent(contentOf(id));
       }
     }
     this.renderableIds = idsInView;

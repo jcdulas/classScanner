@@ -8,6 +8,7 @@ import { clipSegmentToRect, dashSegments, edgeSegment } from '../../src/webview/
 import { pushOverlappingCards } from '../../src/webview/model/overlap';
 import { placeNewItems } from '../../src/webview/model/placement';
 import { computeVisibleNodeIds, findNeighborhood } from '../../src/webview/model/visibility';
+import { TEXT_MIN_SCALE, cardContentFor, levelOfDetailForScale, unsimplifiedCardContentFor } from '../../src/webview/render/levelOfDetail';
 
 const METRICS = { charWidth: 7 };
 
@@ -85,6 +86,25 @@ describe('card geometry', () => {
     expect(layout.rows[0].text).toHaveLength(CARD_STYLE.maxLineCharacters);
     expect(layout.rows[0].text.endsWith('…')).toBe(true);
     expect(layout.width).toBeGreaterThan(CARD_STYLE.maxLineCharacters * METRICS.charWidth);
+  });
+});
+
+describe('level of detail', () => {
+  it('simplifies cards as the view zooms out', () => {
+    expect(levelOfDetailForScale(0.1)).toBe('overview');
+    expect(levelOfDetailForScale(0.3)).toBe('compact');
+    expect(levelOfDetailForScale(1)).toBe('full');
+    expect(cardContentFor('overview', 'full')).toBe('none');
+    expect(cardContentFor('compact', 'auto')).toBe('bigName');
+    expect(cardContentFor('compact', 'full')).toBe('members');
+    expect(cardContentFor('full', 'compact')).toBe('header');
+  });
+
+  it('keeps full cards at every zoom when the simplification is off, without invisible text', () => {
+    expect(unsimplifiedCardContentFor(1, 'auto')).toBe('members');
+    expect(unsimplifiedCardContentFor(TEXT_MIN_SCALE, 'auto')).toBe('members');
+    expect(unsimplifiedCardContentFor(0.3, 'compact')).toBe('header');
+    expect(unsimplifiedCardContentFor(0.05, 'auto')).toBe('frame');
   });
 });
 

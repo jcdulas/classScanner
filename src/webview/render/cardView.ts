@@ -79,7 +79,7 @@ export class CardView {
     const wasSolid = isSolid(this.contentKind);
     this.releaseContent();
     this.contentKind = kind;
-    if (kind !== 'none') {
+    if (kind !== 'none' && kind !== 'frame') {
       this.content = this.buildContent(kind);
       this.container.addChild(this.content);
     }

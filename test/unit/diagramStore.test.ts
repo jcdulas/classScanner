@@ -123,20 +123,22 @@ describe('store actions', () => {
     expect(modes).toEqual(['full', 'compact', 'auto']);
   });
 
-  it('merges the edges between groups at the overview level and for collapsed groups', async () => {
+  it('merges the edges of collapsed groups, and of every group only on request', async () => {
     const store = await loadedStore();
     store.toggleRelation('compose');
     const boxes = computeGroupBoxes(store);
-    expect(computeDisplayedEdges(store, boxes, 'full').aggregated).toHaveLength(0);
-    const overview = computeDisplayedEdges(store, boxes, 'overview');
-    expect(overview.individual).toHaveLength(0);
-    expect(overview.aggregated).toHaveLength(1);
-    expect(overview.aggregated[0].countsByKind).toEqual({ compose: 1 });
+    const expanded = computeDisplayedEdges(store, boxes);
+    expect(expanded.aggregated).toHaveLength(0);
+    expect(expanded.individual).toHaveLength(3);
+    const merged = computeDisplayedEdges(store, boxes, { mergeAllGroups: true });
+    expect(merged.individual).toHaveLength(0);
+    expect(merged.aggregated).toHaveLength(1);
 
     store.toggleGroupCollapsed('b');
-    const collapsed = computeDisplayedEdges(store, computeGroupBoxes(store), 'full');
+    const collapsed = computeDisplayedEdges(store, computeGroupBoxes(store));
     expect(collapsed.individual.map((item) => item.edge.kind)).toEqual(['inherit', 'inherit']);
     expect(collapsed.aggregated).toHaveLength(1);
+    expect(collapsed.aggregated[0].countsByKind).toEqual({ compose: 1 });
   });
 
   it('isolates a neighborhood and restores the full diagram', async () => {
@@ -154,6 +156,8 @@ describe('store actions', () => {
     store.moveNodes(['a::Base'], 500, 0);
     store.setDisplayMode(['b::Part'], 'compact');
     store.toggleRelation('depend');
+    store.setSimplifyCardsWhenZoomedOut(false);
+    store.setMergeRelationsWhenZoomedOut(true);
     const saved = JSON.parse(JSON.stringify(store.toSavedState()));
 
     const graph = makeGraph();
@@ -165,6 +169,8 @@ describe('store actions', () => {
     expect(restored.positions.get('a::Base')).toEqual(store.positions.get('a::Base'));
     expect(restored.displayModeOf('b::Part')).toBe('compact');
     expect(restored.activeRelations.has('depend')).toBe(true);
+    expect(restored.simplifyCardsWhenZoomedOut).toBe(false);
+    expect(restored.mergeRelationsWhenZoomedOut).toBe(true);
     expect(restored.positions.has('b::Other')).toBe(false);
     // The new class is placed next to its group instead of recomputing the layout.
     expect(restored.positions.has('b::New')).toBe(true);

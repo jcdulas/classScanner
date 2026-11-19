@@ -21,6 +21,7 @@ import {
   aggregatedLinkWidth,
   clipSegmentToRect,
   decorationPolygon,
+  decorationSizeForScale,
   dashSegments,
   edgeSegment,
   lineEndBeforeDecoration,
@@ -29,10 +30,11 @@ import { AggregatedLink, DisplayedEdges, IndividualEdge } from '../model/sceneGe
 import { CARD_FONTS } from './fonts';
 import { Theme } from './theme';
 
-const DECORATION_SCREEN_SIZE = 11;
 const DIMMED_ALPHA = 0.12;
 const MAX_FRIEND_LABELS = 200;
 const AGGREGATED_ALPHA = 0.35;
+/** The edges of the selected classes are drawn this much thicker. */
+const HIGHLIGHT_WIDTH_FACTOR = 1.6;
 const MAX_DASHES_PER_BATCH = 20_000;
 
 export class EdgeLayer {
@@ -42,6 +44,8 @@ export class EdgeLayer {
   private readonly highlightGraphics = new Graphics();
   private readonly labels = new Container();
   private readonly baseContainer = new Container();
+  private isFriendKindActive = false;
+  private areLabelsReadable = false;
 
   constructor() {
     for (const kind of ALL_RELATION_KINDS) {
@@ -62,7 +66,6 @@ export class EdgeLayer {
     displayed: DisplayedEdges,
     theme: Theme,
     scale: number,
-    showLabels: boolean,
     visibleArea: Rect | undefined,
   ): void {
     const byKind = groupByKind(displayed.individual);
@@ -71,7 +74,7 @@ export class EdgeLayer {
       graphics.clear();
       drawEdgeBatch(graphics, byKind.get(kind) ?? [], kind, theme.relationColors[kind], theme, scale, 1, visibleArea);
       if (kind === 'friend') {
-        this.drawFriendLabels(showLabels ? (byKind.get('friend') ?? []) : [], theme);
+        this.drawFriendLabels(byKind.get('friend') ?? [], theme);
       }
     }
   }
@@ -81,7 +84,14 @@ export class EdgeLayer {
     for (const [kind, graphics] of this.batches) {
       graphics.visible = activeKinds.has(kind);
     }
-    this.labels.visible = activeKinds.has('friend');
+    this.isFriendKindActive = activeKinds.has('friend');
+    this.labels.visible = this.isFriendKindActive && this.areLabelsReadable;
+  }
+
+  /** The friend labels are only shown when the view is close enough to read them. */
+  setLabelsReadable(areReadable: boolean): void {
+    this.areLabelsReadable = areReadable;
+    this.labels.visible = this.isFriendKindActive && areReadable;
   }
 
   /** Merged links between groups depend on every active kind, so they are redrawn on each change. */
@@ -93,7 +103,7 @@ export class EdgeLayer {
   rebuildHighlight(edges: IndividualEdge[], theme: Theme, scale: number): void {
     this.highlightGraphics.clear();
     for (const [kind, items] of groupByKind(edges)) {
-      drawEdgeBatch(this.highlightGraphics, items, kind, theme.accent, theme, scale, 2, undefined);
+      drawEdgeBatch(this.highlightGraphics, items, kind, theme.accent, theme, scale, HIGHLIGHT_WIDTH_FACTOR, undefined);
     }
   }
 
@@ -148,7 +158,7 @@ function drawEdgeBatch(
   }
   const style = EDGE_STYLES[kind];
   const lineWidth = (style.width * widthFactor) / scale;
-  const decorationSize = DECORATION_SCREEN_SIZE / scale;
+  const decorationSize = decorationSizeForScale(scale);
   const closedDecorations: number[][] = [];
   const circles: Point[] = [];
 
@@ -182,7 +192,8 @@ function drawEdgeBatch(
       closedDecorations.push(polygon);
     }
   }
-  graphics.stroke({ width: lineWidth, color, alpha: 0.9 });
+  const alpha = lineAlphaForCount(edges.length);
+  graphics.stroke({ width: lineWidth, color, alpha });
 
   if (closedDecorations.length > 0) {
     const fillColor = style.decoration === 'filledDiamond' ? color : theme.background;
@@ -193,7 +204,7 @@ function drawEdgeBatch(
     for (const polygon of closedDecorations) {
       graphics.poly(polygon, true);
     }
-    graphics.stroke({ width: lineWidth, color });
+    graphics.stroke({ width: lineWidth, color, alpha });
   }
   if (circles.length > 0) {
     const radius = decorationSize * 0.6;
@@ -206,7 +217,7 @@ function drawEdgeBatch(
       graphics.moveTo(center.x - radius, center.y).lineTo(center.x + radius, center.y);
       graphics.moveTo(center.x, center.y - radius).lineTo(center.x, center.y + radius);
     }
-    graphics.stroke({ width: lineWidth, color });
+    graphics.stroke({ width: lineWidth, color, alpha });
   }
 }
 
@@ -237,6 +248,19 @@ function chooseDashPattern(
     }
   }
   return pattern;
+}
+
+/**
+ * Opacity of the lines of a batch. A few hundred edges are drawn almost opaque. Thousands of
+ * edges, as when the whole diagram is in view, are drawn more and more transparent: they
+ * stay visible as a veil without hiding the cards behind a solid mass of lines.
+ */
+function lineAlphaForCount(edgeCount: number): number {
+  const fullOpacityCount = 400;
+  if (edgeCount <= fullOpacityCount) {
+    return 0.9;
+  }
+  return Math.max(0.3, 0.9 * Math.sqrt(fullOpacityCount / edgeCount));
 }
 
 function groupByKind(edges: IndividualEdge[]): Map<RelationKind, IndividualEdge[]> {

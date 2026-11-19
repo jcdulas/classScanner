@@ -50,6 +50,12 @@ export interface SavedDiagramState {
   activeRelations: RelationKind[];
   filters: DiagramFilters;
   camera?: CameraState;
+  /**
+   * What changes when the view is zoomed out (spec §4.3, §4.5). Both are optional so that
+   * files saved by older versions still load; see createDefaultState for the defaults.
+   */
+  simplifyCardsWhenZoomedOut?: boolean;
+  mergeRelationsWhenZoomedOut?: boolean;
 }
 
 /** The file written by the extension host also remembers how the folder was scanned. */
@@ -77,5 +83,7 @@ export function createDefaultState(): SavedDiagramState {
       hiddenFolders: [],
       showExternal: false,
     },
+    simplifyCardsWhenZoomedOut: true,
+    mergeRelationsWhenZoomedOut: false,
   };
 }

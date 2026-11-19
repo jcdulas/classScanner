@@ -37,6 +37,8 @@ export type ChangeTopic =
   | 'groups'
   | 'selection'
   | 'camera'
+  /** The options that say what changes when the view is zoomed out. */
+  | 'zoomOptions'
   /** User interface only: phase, search, menus, panels. */
   | 'ui';
 
@@ -64,7 +66,7 @@ export interface LayoutService {
 
 type Listener = (change: StoreChange) => void;
 
-const PERSISTED_TOPICS: ChangeTopic[] = ['positions', 'cards', 'relations', 'visibility', 'groups', 'camera'];
+const PERSISTED_TOPICS: ChangeTopic[] = ['positions', 'cards', 'relations', 'visibility', 'groups', 'camera', 'zoomOptions'];
 
 export class DiagramStore {
   // ---- Data received from the extension host ----
@@ -83,6 +85,10 @@ export class DiagramStore {
   activeRelations = new Set<RelationKind>(['inherit']);
   filters: DiagramFilters = createDefaultState().filters;
   camera: CameraState | undefined;
+  /** When true, cards show less as the view zooms out (names, then plain tiles). */
+  simplifyCardsWhenZoomedOut = true;
+  /** When true, the relations between two groups merge into one link at the overview level. */
+  mergeRelationsWhenZoomedOut = false;
 
   // ---- Derived data, recomputed when its inputs change ----
   cardLayouts = new Map<string, CardLayout>();
@@ -443,6 +449,18 @@ export class DiagramStore {
     this.emit(['camera']);
   }
 
+  /** Turns the semantic zoom of the cards on or off (spec §4.3). */
+  setSimplifyCardsWhenZoomedOut(isEnabled: boolean): void {
+    this.simplifyCardsWhenZoomedOut = isEnabled;
+    this.emit(['zoomOptions', 'ui']);
+  }
+
+  /** Turns the merging of relations between groups, when zoomed out, on or off (spec §4.5). */
+  setMergeRelationsWhenZoomedOut(isEnabled: boolean): void {
+    this.mergeRelationsWhenZoomedOut = isEnabled;
+    this.emit(['zoomOptions', 'ui']);
+  }
+
   setLevelOfDetail(level: LevelOfDetail): void {
     if (level !== this.levelOfDetail) {
       this.levelOfDetail = level;
@@ -495,6 +513,8 @@ export class DiagramStore {
       activeRelations: Array.from(this.activeRelations),
       filters: this.filters,
       camera: this.camera,
+      simplifyCardsWhenZoomedOut: this.simplifyCardsWhenZoomedOut,
+      mergeRelationsWhenZoomedOut: this.mergeRelationsWhenZoomedOut,
     };
   }
 
@@ -514,6 +534,8 @@ export class DiagramStore {
     this.activeRelations = new Set(state.activeRelations);
     this.filters = { ...createDefaultState().filters, ...state.filters };
     this.camera = state.camera;
+    this.simplifyCardsWhenZoomedOut = state.simplifyCardsWhenZoomedOut ?? true;
+    this.mergeRelationsWhenZoomedOut = state.mergeRelationsWhenZoomedOut ?? false;
   }
 
   // ---------------------------------------------------------------------------

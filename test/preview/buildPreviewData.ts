@@ -7,9 +7,15 @@ import { createInProcessParseFunction } from '../../src/scanner/inProcessParser'
 import { scanFolder } from '../../src/scanner/scanFolder';
 import { ALL_RELATION_KINDS, RelationKind } from '../../src/shared/graphModel';
 import { HostToWebviewMessage } from '../../src/shared/messages';
-import { createDefaultState } from '../../src/shared/savedState';
+import { SavedDiagramState, createDefaultState } from '../../src/shared/savedState';
 
-export async function buildPreviewData(projectRoot: string, folder: string, activeRelations: string, outputFile: string): Promise<void> {
+export async function buildPreviewData(
+  projectRoot: string,
+  folder: string,
+  activeRelations: string,
+  extraState: Partial<SavedDiagramState>,
+  outputFile: string,
+): Promise<void> {
   const nodeModules = path.join(projectRoot, 'node_modules');
   const { graph, report } = await scanFolder({
     folder,
@@ -27,7 +33,7 @@ export async function buildPreviewData(projectRoot: string, folder: string, acti
     type: 'graph',
     graph,
     report,
-    savedState: { ...createDefaultState(), activeRelations: relations },
+    savedState: { ...createDefaultState(), activeRelations: relations, ...extraState },
     settings: { maxMembersInAutoMode: 12, structuralRelations: ['inherit', 'compose'] },
   };
   await writeFile(outputFile, JSON.stringify(message));

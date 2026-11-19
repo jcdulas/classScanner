@@ -3,7 +3,9 @@
 //
 // Usage: node scripts/previewWebview.mjs [--theme dark|light] [--scenario default|selection|zoom|menu]
 //        [--folder test/fixtures/project] [--relations all|inherit,compose] [--size 1500x950]
-//        [--output out/preview/preview.png]
+//        [--output out/preview/preview.png] [--state '{"simplifyCardsWhenZoomedOut":false}']
+//
+// --state gives fields of the saved arrangement (src/shared/savedState.ts) as JSON.
 //
 // The page is test/preview/harness.html: it stands in for VS Code (theme variables and
 // acquireVsCodeApi) and can play a scenario of mouse actions before the screenshot.
@@ -56,7 +58,8 @@ async function buildGraphMessage() {
     banner: { js: "const importMetaUrl = require('node:url').pathToFileURL(__filename).href;" },
   });
   const { buildPreviewData } = createRequire(import.meta.url)(bundle);
-  await buildPreviewData(projectRoot, folder, relations, path.join(previewFolder, 'graph.json'));
+  const extraState = JSON.parse(option('state', '{}'));
+  await buildPreviewData(projectRoot, folder, relations, extraState, path.join(previewFolder, 'graph.json'));
 }
 
 /** Serves the harness page, the graph and the webview bundles of dist/. */

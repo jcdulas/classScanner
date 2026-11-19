@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+- Thinner relation lines, arrow heads and diamonds.
+- The relations that are turned on stay visible at every zoom level, instead of being merged between groups when zoomed out. Dense sets of relations are drawn more transparent.
+- New "Zoomed out" switches in the side panel: "Simplify cards" (turn it off to keep full cards at every zoom level) and "Merge relations" (turn it on to merge the relations between groups when zoomed out).
+
 ## 0.1.1
 
 - Extension icon.

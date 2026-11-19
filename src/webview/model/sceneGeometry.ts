@@ -2,13 +2,13 @@
 // boxes, card rectangles and the list of edges to draw (spec §4.4, §4.5).
 // The WebGL renderer and the SVG export both use it, so they always agree.
 //
-// Edge merging: when a group is collapsed, or when the whole diagram is seen
-// from far away (overview level), the edges between two groups are replaced
-// by a single "aggregated" link whose thickness reflects how many relations
-// it stands for.
+// Edge merging: the edges that reach a collapsed group are replaced by a single
+// "aggregated" link per pair of groups, whose thickness reflects how many
+// relations it stands for. The same merging can be applied to every group when
+// the view is zoomed far out, if the user turned that option on.
 
 import { Edge, RelationKind } from '../../shared/graphModel';
-import { DiagramStore, LevelOfDetail } from '../state/diagramStore';
+import { DiagramStore } from '../state/diagramStore';
 import { Rect, rectsOverlap, unionOfRects } from './geometry';
 import { GROUP_STYLE, groupLabel } from './groups';
 
@@ -41,6 +41,13 @@ export interface AggregatedLink {
 export interface DisplayedEdges {
   individual: IndividualEdge[];
   aggregated: AggregatedLink[];
+}
+
+export interface DisplayedEdgesOptions {
+  /** Merge the edges between every pair of groups, not only those of collapsed groups. */
+  mergeAllGroups?: boolean;
+  /** Skip the edges whose two ends are outside of this rectangle (spec §4.5). */
+  cullRect?: Rect;
 }
 
 export function cardRect(store: DiagramStore, id: string): Rect | undefined {
@@ -98,20 +105,18 @@ export function isCardShown(store: DiagramStore, groupBoxes: Map<string, GroupBo
 }
 
 /**
- * The edges to draw for the active relations. When `cullRect` is given, edges
- * whose two ends are outside of it are skipped (spec §4.5).
+ * The edges to draw for the active relations.
  */
 export function computeDisplayedEdges(
   store: DiagramStore,
   groupBoxes: Map<string, GroupBox>,
-  level: LevelOfDetail,
-  cullRect?: Rect,
+  options: DisplayedEdgesOptions = {},
 ): DisplayedEdges {
+  const { mergeAllGroups = false, cullRect } = options;
   const individual: IndividualEdge[] = [];
   const aggregatedByPair = new Map<string, AggregatedLink>();
-  const mergeAllGroups = level === 'overview' && groupBoxes.size > 0;
 
-  // Where each end of an edge is drawn: on the card itself, or on its group.
+  // Where each end of an edge is drawn: on the card itself, or on its group when the group is collapsed.
   const endpointOf = (id: string): { key: string; rect: Rect; isGroup: boolean } | undefined => {
     if (!store.visibleNodeIds.has(id)) {
       return undefined;

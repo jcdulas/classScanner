@@ -17,6 +17,7 @@ import { Rect, expandRect, rectContainsPoint, unionOfRects } from '../model/geom
 import { GROUP_STYLE } from '../model/groups';
 import {
   DisplayedEdges,
+  DisplayedEdgesOptions,
   GroupBox,
   cardRect,
   computeDisplayedEdges,
@@ -29,7 +30,7 @@ import { Camera, ViewInsets } from './camera';
 import { CardLayer } from './cardLayer';
 import { EdgeLayer } from './edgeLayer';
 import { GroupLayer } from './groupLayer';
-import { levelOfDetailForScale } from './levelOfDetail';
+import { CardContent, TEXT_MIN_SCALE, cardContentFor, levelOfDetailForScale, unsimplifiedCardContentFor } from './levelOfDetail';
 import { Minimap } from './minimap';
 import { delay, measurePanningPerformance, measureRelationToggle } from './performanceProbe';
 import { PointerInteraction } from './pointerInteraction';
@@ -181,9 +182,9 @@ export class DiagramRenderer {
 
   async measurePerformance(): Promise<FrameStatistics[]> {
     const statistics = await measurePanningPerformance(this.camera, this.app.ticker, () => this.markCameraMoved());
-    // Toggling the most numerous relation kind of the diagram, at the intermediate zoom level.
-    this.camera.setState({ ...this.camera.state, scale: 0.3 });
-    this.markCameraMoved();
+    // Toggling the most numerous relation kind with the whole diagram in view: every edge of
+    // that kind is drawn, which is the worst case.
+    this.fitToView(false);
     await delay(CAMERA_SETTLE_MS * 3);
     const kind = this.mostNumerousRelationKind();
     const toggle = () => this.store.toggleRelation(kind);
@@ -198,6 +199,23 @@ export class DiagramRenderer {
     for (const [level, duration] of [[firstLabel, firstMs], [secondLabel, secondMs]] as const) {
       statistics.push({ level, frameCount: 1, averageFrameMs: duration, percentile95FrameMs: duration });
     }
+    statistics.push(...(await this.measureFullCardsWhenZoomedOut()));
+    return statistics;
+  }
+
+  /** Frame times when cards are not simplified: whole diagram in view, then the farthest zoom that draws text. */
+  private async measureFullCardsWhenZoomedOut(): Promise<FrameStatistics[]> {
+    const wasSimplifying = this.store.simplifyCardsWhenZoomedOut;
+    this.store.setSimplifyCardsWhenZoomedOut(false);
+    this.fitToView(false);
+    // Lets the text of every card be created before measuring.
+    await delay(1500);
+    const levels = [
+      { level: 'whole diagram, full cards', scale: this.camera.scale },
+      { level: 'smallest readable text, full cards', scale: TEXT_MIN_SCALE * 1.05 },
+    ];
+    const statistics = await measurePanningPerformance(this.camera, this.app.ticker, () => this.markCameraMoved(), levels);
+    this.store.setSimplifyCardsWhenZoomedOut(wasSimplifying);
     return statistics;
   }
 
@@ -288,8 +306,10 @@ export class DiagramRenderer {
     if (sceneChanged) {
       this.rebuildScene();
     }
-    if (sceneChanged) {
+    if (sceneChanged || has('zoomOptions')) {
       this.rebuildEdges();
+      // The content of the cards may have to change too: the next frame redoes the culling.
+      this.isCameraDirty = true;
     } else if (has('relations')) {
       this.updateEdgesForRelationChange();
     } else if (has('selection')) {
@@ -340,8 +360,11 @@ export class DiagramRenderer {
     if (newLevel !== this.level) {
       this.level = newLevel;
       this.store.setLevelOfDetail(newLevel);
-      // Edges are merged by group at the overview level only.
-      this.rebuildEdges();
+      this.edgeLayer.setLabelsReadable(newLevel === 'full');
+      if (this.store.mergeRelationsWhenZoomedOut) {
+        // Relations are merged between groups at the overview level only.
+        this.rebuildEdges();
+      }
     }
     this.groupLayer.updateTitleScale(this.camera.scale);
     const view = this.camera.visibleWorldRect();
@@ -351,7 +374,7 @@ export class DiagramRenderer {
         idsInView.add(item.target.id);
       }
     }
-    this.cardLayer.updateCulling(idsInView, this.level, this.store);
+    this.cardLayer.updateCulling(idsInView, (id) => this.cardContentOf(id));
     this.minimap.setViewRect(view);
   }
 
@@ -381,9 +404,9 @@ export class DiagramRenderer {
     const view = this.camera.visibleWorldRect();
     this.edgeCullRect = expandRect(view, Math.max(view.width, view.height) * 0.5);
     this.edgeBuildScale = this.camera.scale;
-    this.displayedEdges = computeDisplayedEdges(this.store, this.groupBoxes, this.level, this.edgeCullRect);
+    this.displayedEdges = computeDisplayedEdges(this.store, this.groupBoxes, this.displayedEdgesOptions());
     const activeKinds = this.store.activeRelations;
-    this.edgeLayer.rebuildBatches(activeKinds, this.displayedEdges, this.theme, this.camera.scale, this.level === 'full', this.edgeCullRect);
+    this.edgeLayer.rebuildBatches(activeKinds, this.displayedEdges, this.theme, this.camera.scale, this.edgeCullRect);
     // The batches of inactive kinds were not redrawn: they are out of date until redrawn.
     this.upToDateEdgeKinds = new Set(activeKinds);
     this.edgeLayer.showOnly(activeKinds);
@@ -397,15 +420,34 @@ export class DiagramRenderer {
    */
   private updateEdgesForRelationChange(): void {
     const activeKinds = this.store.activeRelations;
-    this.displayedEdges = computeDisplayedEdges(this.store, this.groupBoxes, this.level, this.edgeCullRect);
+    this.displayedEdges = computeDisplayedEdges(this.store, this.groupBoxes, this.displayedEdgesOptions());
     const kindsToRedraw = Array.from(activeKinds).filter((kind) => !this.upToDateEdgeKinds.has(kind));
-    this.edgeLayer.rebuildBatches(kindsToRedraw, this.displayedEdges, this.theme, this.edgeBuildScale, this.level === 'full', this.edgeCullRect);
+    this.edgeLayer.rebuildBatches(kindsToRedraw, this.displayedEdges, this.theme, this.edgeBuildScale, this.edgeCullRect);
     for (const kind of kindsToRedraw) {
       this.upToDateEdgeKinds.add(kind);
     }
     this.edgeLayer.showOnly(activeKinds);
     this.edgeLayer.rebuildAggregated(this.displayedEdges, this.theme, this.edgeBuildScale);
     this.rebuildHighlight();
+  }
+
+  private displayedEdgesOptions(): DisplayedEdgesOptions {
+    return {
+      mergeAllGroups: this.store.mergeRelationsWhenZoomedOut && this.level === 'overview',
+      cullRect: this.edgeCullRect,
+    };
+  }
+
+  /**
+   * What a card shows at the current zoom. When the user turned the simplification off,
+   * cards are drawn with full detail however far the view is (spec §4.3).
+   */
+  private cardContentOf(id: string): CardContent {
+    const displayMode = this.store.displayModeOf(id);
+    if (this.store.simplifyCardsWhenZoomedOut) {
+      return cardContentFor(this.level, displayMode);
+    }
+    return unsimplifiedCardContentFor(this.camera.scale, displayMode);
   }
 
   private rebuildHighlight(): void {
@@ -455,7 +497,7 @@ export class DiagramRenderer {
     this.groupLayer.titleContainer.visible = false;
     this.groupLayer.collapsedContainer.visible = false;
     // Every card is drawn during the animation, so their content is reduced to plain rectangles.
-    this.cardLayer.updateCulling(new Set(), this.level, this.store);
+    this.cardLayer.updateCulling(new Set(), (id) => this.cardContentOf(id));
     this.cardLayer.syncShown((id) => this.store.visibleNodeIds.has(id), this.animation.to);
     const bounds = unionOfRects(Array.from(this.store.visibleNodeIds).flatMap((id) => cardRect(this.store, id) ?? []));
     if (bounds !== undefined) {
@@ -647,9 +689,10 @@ export class DiagramRenderer {
     const savedLevel = this.level;
     this.level = 'full';
     this.cardLayer.enterExportMode(this.store);
+    this.edgeLayer.setLabelsReadable(true);
     this.groupLayer.updateTitleScale(1);
-    this.displayedEdges = computeDisplayedEdges(this.store, this.groupBoxes, 'full');
-    this.edgeLayer.rebuildBatches(this.store.activeRelations, this.displayedEdges, this.theme, scale, true, undefined);
+    this.displayedEdges = computeDisplayedEdges(this.store, this.groupBoxes);
+    this.edgeLayer.rebuildBatches(this.store.activeRelations, this.displayedEdges, this.theme, scale, undefined);
     this.edgeLayer.rebuildAggregated(this.displayedEdges, this.theme, scale);
     this.rebuildHighlight();
     // Render in world coordinates: the camera transform is removed while exporting.
@@ -676,6 +719,7 @@ export class DiagramRenderer {
       }
     } finally {
       this.cardLayer.leaveExportMode();
+      this.edgeLayer.setLabelsReadable(savedLevel === 'full');
       this.level = savedLevel;
       this.camera.setState(savedCamera);
       this.dirty.add('positions');

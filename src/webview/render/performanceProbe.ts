@@ -32,13 +32,25 @@ function nextFrame(ticker: Ticker): Promise<void> {
   return new Promise((resolve) => ticker.addOnce(() => resolve()));
 }
 
-export async function measurePanningPerformance(camera: Camera, ticker: Ticker, onCameraMoved: () => void): Promise<FrameStatistics[]> {
+export interface ProbeLevel {
+  level: string;
+  scale: number;
+}
+
+/** One zoom level per level of detail. */
+const DEFAULT_LEVELS: ProbeLevel[] = [
+  { level: 'overview', scale: OVERVIEW_MAX_SCALE / 2 },
+  { level: 'compact', scale: (OVERVIEW_MAX_SCALE + FULL_MIN_SCALE) / 2 },
+  { level: 'full', scale: FULL_MIN_SCALE * 1.5 },
+];
+
+export async function measurePanningPerformance(
+  camera: Camera,
+  ticker: Ticker,
+  onCameraMoved: () => void,
+  levels: ProbeLevel[] = DEFAULT_LEVELS,
+): Promise<FrameStatistics[]> {
   const initial = camera.state;
-  const levels: { level: string; scale: number }[] = [
-    { level: 'overview', scale: OVERVIEW_MAX_SCALE / 2 },
-    { level: 'compact', scale: (OVERVIEW_MAX_SCALE + FULL_MIN_SCALE) / 2 },
-    { level: 'full', scale: FULL_MIN_SCALE * 1.5 },
-  ];
   const results: FrameStatistics[] = [];
   for (const { level, scale } of levels) {
     camera.setState({ ...initial, scale });

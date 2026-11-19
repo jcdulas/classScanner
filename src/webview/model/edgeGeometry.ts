@@ -26,20 +26,20 @@ export interface EdgeStyle {
 }
 
 export const EDGE_STYLES: Record<RelationKind, EdgeStyle> = {
-  inherit: { line: 'solid', width: 1.6, decoration: 'hollowTriangle', decorationAtSource: false },
-  compose: { line: 'solid', width: 1.4, decoration: 'filledDiamond', decorationAtSource: true },
-  aggregate: { line: 'solid', width: 1.4, decoration: 'hollowDiamond', decorationAtSource: true },
-  depend: { line: 'dashed', width: 1.2, decoration: 'openArrow', decorationAtSource: false },
-  include: { line: 'dotted', width: 1, decoration: 'openArrow', decorationAtSource: false },
-  friend: { line: 'dashed', width: 1.2, decoration: 'openArrow', decorationAtSource: false },
-  nest: { line: 'solid', width: 1.2, decoration: 'circledPlus', decorationAtSource: true },
+  inherit: { line: 'solid', width: 1.1, decoration: 'hollowTriangle', decorationAtSource: false },
+  compose: { line: 'solid', width: 1, decoration: 'filledDiamond', decorationAtSource: true },
+  aggregate: { line: 'solid', width: 1, decoration: 'hollowDiamond', decorationAtSource: true },
+  depend: { line: 'dashed', width: 0.9, decoration: 'openArrow', decorationAtSource: false },
+  include: { line: 'dotted', width: 0.8, decoration: 'openArrow', decorationAtSource: false },
+  friend: { line: 'dashed', width: 0.9, decoration: 'openArrow', decorationAtSource: false },
+  nest: { line: 'solid', width: 0.9, decoration: 'circledPlus', decorationAtSource: true },
 };
 
 /** Dash and gap lengths in screen pixels. */
 export const DASH_PATTERNS: Record<LineStyle, [number, number] | undefined> = {
   solid: undefined,
-  dashed: [7, 4],
-  dotted: [2, 3],
+  dashed: [5, 3],
+  dotted: [1.5, 3],
 };
 
 /**
@@ -47,7 +47,20 @@ export const DASH_PATTERNS: Record<LineStyle, [number, number] | undefined> = {
  * logarithm of the number of relations: 1 relation is thin, 1000 are not 1000 times thicker.
  */
 export function aggregatedLinkWidth(relationCount: number): number {
-  return Math.min(10, 1 + 1.5 * Math.log2(relationCount));
+  return Math.min(5, 0.9 + 0.6 * Math.log2(relationCount));
+}
+
+/** Length of an arrow head or diamond, in screen pixels. */
+const DECORATION_SCREEN_SIZE = 7;
+/** Decorations never get larger than this in diagram units, so they stay smaller than the cards. */
+const DECORATION_MAX_WORLD_SIZE = 12;
+
+/**
+ * Size of the decorations in diagram units for a zoom level. Up close they keep a constant
+ * size on screen; far away they shrink with the cards instead of covering them.
+ */
+export function decorationSizeForScale(scale: number): number {
+  return Math.min(DECORATION_SCREEN_SIZE / scale, DECORATION_MAX_WORLD_SIZE);
 }
 
 export interface Segment {

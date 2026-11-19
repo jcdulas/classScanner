@@ -67,9 +67,14 @@ The controls float above the diagram:
 - **Top left**: show or hide the side panel, and search.
 - **Top center**: the layout, the grouping, **Recompute layout**, and the display mode of every card (auto follows the zoom, compact shows names only, full shows all members).
 - **Top right**: rescan and export.
-- **Side panel**: a switch per relation kind, the isolation depth, and filters by kind, namespace and folder.
+- **Side panel**: a switch per relation kind, what changes when zoomed out, the isolation depth, and filters by kind, namespace and folder.
 - **Bottom**: the status and the scan report on the left, zoom controls and the minimap on the right.
 - **Selection bar**: appears while classes are selected, with the actions that apply to them.
+
+Two switches of the side panel, under **Zoomed out**, set what happens when you zoom out:
+
+- **Simplify cards** (on by default): cards show their name, then a plain tile. Turn it off to keep full cards at every zoom level.
+- **Merge relations** (off by default): every relation stays drawn. Turn it on to merge the relations between two groups into a single link when the view is far away.
 
 **Recompute layout** lays the diagram out again. It reclaims the room left by cards made compact, and discards the manual moves of the current layout.
 
@@ -137,7 +142,7 @@ Measured in VS Code 1.130.0 on a synthetic project of 1500 classes in 2000 files
 | Scan | 0.9 to 1.7 s |
 | Layout | 0.4 to 1.6 s, depending on the layout |
 | Pan and zoom, every relation shown | 57 to 60 frames per second |
-| Turning a relation kind on or off | under 30 ms |
+| Turning a relation kind on or off | under 40 ms |
 
 ## Requirements
 
