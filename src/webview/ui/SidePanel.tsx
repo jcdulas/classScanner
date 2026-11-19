@@ -38,7 +38,7 @@ export function SidePanel({ controller }: SidePanelProps) {
     } else {
       hidden.add(kind);
     }
-    store.setFilters({ hiddenEntityKinds: Array.from(hidden) });
+    void store.setFilters({ hiddenEntityKinds: Array.from(hidden) });
   };
 
   const isolatedName = store.isolation === null ? undefined : store.nodeById.get(store.isolation.nodeId)?.name;
@@ -95,7 +95,7 @@ export function SidePanel({ controller }: SidePanelProps) {
             <span class="row-label">{label}</span>
           </ToggleRow>
         ))}
-        <ToggleRow kind="checkbox" isOn={store.filters.showExternal} onToggle={() => store.setFilters({ showExternal: !store.filters.showExternal })}>
+        <ToggleRow kind="checkbox" isOn={store.filters.showExternal} onToggle={() => void store.setFilters({ showExternal: !store.filters.showExternal })}>
           <span class="row-label">Forward-declared only</span>
         </ToggleRow>
       </Section>
@@ -106,7 +106,7 @@ export function SidePanel({ controller }: SidePanelProps) {
           hidden={store.filters.hiddenNamespaces}
           separator="::"
           emptyLabel="(global namespace)"
-          onChange={(hidden) => store.setFilters({ hiddenNamespaces: hidden })}
+          onChange={(hidden) => void store.setFilters({ hiddenNamespaces: hidden })}
         />
       </Section>
 
@@ -116,7 +116,7 @@ export function SidePanel({ controller }: SidePanelProps) {
           hidden={store.filters.hiddenFolders}
           separator="/"
           emptyLabel="(scanned folder)"
-          onChange={(hidden) => store.setFilters({ hiddenFolders: hidden })}
+          onChange={(hidden) => void store.setFilters({ hiddenFolders: hidden })}
         />
       </Section>
     </aside>

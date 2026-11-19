@@ -28,14 +28,23 @@ export function computeVisibleNodeIds(
   return new Set(Array.from(visible).filter((id) => neighborhood.has(id)));
 }
 
-function passesFilters(node: ClassNode, filters: DiagramFilters, files: string[]): boolean {
+/**
+ * The "Show" filters of the side panel: entity kinds and forward-declared classes.
+ * The layout leaves out the classes they hide, so changing them computes the layout again;
+ * the namespace and folder filters only hide cards where they are (spec §4.4).
+ */
+export function passesEntityFilters(node: ClassNode, filters: DiagramFilters): boolean {
   if (node.isExternal && !filters.showExternal) {
     return false;
   }
   if (filters.hiddenEntityKinds.includes(node.kind)) {
     return false;
   }
-  if (filters.hiddenEntityKinds.includes('template') && isTemplate(node)) {
+  return !(filters.hiddenEntityKinds.includes('template') && isTemplate(node));
+}
+
+function passesFilters(node: ClassNode, filters: DiagramFilters, files: string[]): boolean {
+  if (!passesEntityFilters(node, filters)) {
     return false;
   }
   if (filters.hiddenNamespaces.includes(node.namespace)) {

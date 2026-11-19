@@ -183,6 +183,7 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 - The global hierarchy, and groups of more than 300 classes in the grouped layout, are layered by inheritance only. With composition as well, a dense project gives chains hundreds of layers deep (measured: 20 s of computation and a diagram 3 million units tall, against 0.7 s with inheritance only).
 - Switching layout animates the transition. Each layout keeps its own manual positions.
 - "Recompute layout" computes the current layout again: it reclaims the room freed by compact cards and discards the manual positions of that layout.
+- The layout only places the classes kept by the "Show" filters (entity types, forward-declared classes). Changing one of these filters computes the current layout again, so that hidden classes leave no hole and shown ones get a real place; the other layouts are computed again when they are shown. This discards the manual positions, and can be undone. The namespace and folder filters hide cards in place instead: the other cards do not move.
 
 ### 4.5 Edge readability at scale
 
@@ -213,7 +214,7 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 | Double-click on a group title | Collapses or expands the group |
 | Right-click | Context menu: display modes, isolate, go to source, exports of the selection, collapse the group |
 | Ctrl+F | Search by name (substring, case-insensitive) among classes, methods and attributes. Enter recenters on the class of the result, Ctrl+Enter opens the result in the editor |
-| Ctrl+Z, Ctrl+Y | Undo and redo the changes of the arrangement: moves (one step per drag), display modes, collapsed groups, layout, grouping, "Recompute layout". Up to 50 steps, kept until the next scan |
+| Ctrl+Z, Ctrl+Y | Undo and redo the changes of the arrangement: moves (one step per drag), display modes, collapsed groups, layout, grouping, "Recompute layout", the layout computed for a "Show" filter (the filter itself stays as it is). Up to 50 steps, kept until the next scan |
 | Escape | Closes the menu, then clears the selection, then leaves the isolation |
 
 A tooltip shows the qualified name of a card when its text is not readable, and the counts of a merged link.
@@ -227,8 +228,8 @@ The diagram fills the whole view; the user interface floats above it:
   - a switch for each of the seven relation types, with its line style and edge count;
   - "Zoomed out": the switches "Simplify cards" (§4.3) and "Merge relations" (§4.5);
   - the isolation depth;
-  - filters by entity type (class, struct, union, enum, template) and display of external nodes (declarations without a definition);
-  - filters by namespace and by folder (check box trees with a text filter).
+  - "Show": filters by entity type (class, struct, union, enum, template) and display of external nodes (declarations without a definition); changing one computes the layout again (§4.4);
+  - filters by namespace and by folder (check box trees with a text filter), which hide cards in place.
 - **Bottom left**: status (classes shown, level of detail, scan duration), the scan depth, which is a button to change it, and access to the scan report.
 - **Bottom right**: zoom controls (zoom out, zoom level, zoom in, fit) above the minimap, which shows the groups and a draggable viewport rectangle.
 - **Selection bar** (bottom center, only while classes are selected): display mode of the selection, isolate and go to source for a single class, schema for a language model, sources as `.zip`, clear the selection.

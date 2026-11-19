@@ -152,6 +152,12 @@
         input.value = parameters.get('text');
         input.dispatchEvent(new Event('input', { bubbles: true }));
       },
+      // Click the row of the side panel whose label is the `text` URL parameter, for example "Structs".
+      toggleRow: async () => {
+        const rows = Array.from(document.querySelectorAll('.side-panel .toggle-row'));
+        rows.find((row) => row.querySelector('.row-label').textContent === parameters.get('text')).click();
+        await wait(2500);
+      },
       // Right-click in the middle of the diagram.
       menu: async () => {
         const host = document.querySelector('.diagram-host');

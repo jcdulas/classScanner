@@ -77,7 +77,7 @@ Two switches of the side panel, under **Zoomed out**, set what happens when you 
 - **Simplify cards** (on by default): cards show their name, then a plain tile. Turn it off to keep full cards at every zoom level.
 - **Merge relations** (off by default): every relation stays drawn. Turn it on to merge the relations between two groups into a single link when the view is far away.
 
-**Recompute layout** lays the diagram out again. It reclaims the room left by cards made compact, and discards the manual moves of the current layout; like every change of the arrangement, it can be undone with Ctrl + Z.
+**Recompute layout** lays the diagram out again. It reclaims the room left by cards made compact, and discards the manual moves of the current layout; like every change of the arrangement, it can be undone with Ctrl + Z. Checking or unchecking a kind under **Show** (classes, structs, unions, enums, templates, forward-declared only) does the same, so that hidden classes leave no hole; the namespace and folder filters hide cards without moving the others.
 
 While a diagram is open, saving a C++ file of its folder scans it again: the diagram follows your code, and keeps its arrangement. The depth of a folder is asked the first time only; click **Depth** in the status to change it.
 

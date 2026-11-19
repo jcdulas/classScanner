@@ -179,6 +179,91 @@ describe('store actions', () => {
   });
 });
 
+describe('filters', () => {
+  async function loadedStoreWithStruct(service: LayoutService = layoutService): Promise<DiagramStore> {
+    const graph = makeGraph();
+    graph.nodes.find((node) => node.id === 'a::Right')!.kind = 'struct';
+    const store = new DiagramStore(METRICS, service);
+    await store.loadGraph(graph, REPORT, undefined, SETTINGS);
+    return store;
+  }
+
+  it('computes the layout again, without the hidden classes, when a "Show" filter changes', async () => {
+    const store = await loadedStoreWithStruct();
+    await store.setLayout('hierarchy');
+    await store.setLayout('grouped');
+    store.moveNodes(['a::Base'], 500, 0);
+    const moved = store.positions.get('a::Base');
+
+    await store.setFilters({ hiddenEntityKinds: ['struct'] });
+    expect(store.visibleNodeIds.has('a::Right')).toBe(false);
+    expect(Array.from(store.positions.keys()).sort()).toEqual(['a::Base', 'a::Left', 'b::Other', 'b::Part']);
+    expect(store.positions.get('a::Base')).not.toEqual(moved);
+    // The other layouts are computed again too, when they are shown.
+    await store.setLayout('hierarchy');
+    expect(store.positions.has('a::Right')).toBe(false);
+    await store.setLayout('grouped');
+
+    await store.setFilters({ hiddenEntityKinds: [] });
+    expect(store.positions.size).toBe(5);
+    expectNoOverlap(store);
+  });
+
+  it('undoes the layout computed for a "Show" filter, which brings the manual moves back', async () => {
+    const store = await loadedStoreWithStruct();
+    await store.setFilters({ hiddenEntityKinds: ['struct'] });
+    store.moveNodes(['a::Base'], 500, 0);
+    const moved = store.positions.get('a::Base');
+
+    await store.setFilters({ hiddenEntityKinds: [] });
+    store.undo();
+    expect(store.positions.get('a::Base')).toEqual(moved);
+    // The struct stays shown, so it gets a place in the restored arrangement.
+    expect(store.visibleNodeIds.has('a::Right')).toBe(true);
+    expect(store.positions.has('a::Right')).toBe(true);
+  });
+
+  it('hides a namespace without moving the other classes', async () => {
+    const store = await loadedStore();
+    const before = new Map(store.positions);
+    await store.setFilters({ hiddenNamespaces: ['b'] });
+    expect(Array.from(store.visibleNodeIds).sort()).toEqual(['a::Base', 'a::Left', 'a::Right']);
+    expect(store.positions).toEqual(before);
+  });
+
+  it('keeps the latest layout when an older one ends after it', async () => {
+    // A layout service whose results are released by hand, to end them out of order.
+    const releases: (() => void)[] = [];
+    const manualService: LayoutService = {
+      compute: async (input: LayoutInput) => {
+        const positions = await computeLayout(input);
+        await new Promise<void>((resolve) => releases.push(resolve));
+        return { positions, durationMs: 0 };
+      },
+      pack: layoutService.pack,
+    };
+    const loading = loadedStoreWithStruct(manualService);
+    await waitUntil(() => releases.length === 1);
+    releases[0]();
+    const store = await loading;
+
+    const hiding = store.setFilters({ hiddenEntityKinds: ['struct'] });
+    const showing = store.setFilters({ hiddenEntityKinds: [] });
+    await waitUntil(() => releases.length === 3);
+    releases[2]();
+    releases[1]();
+    await Promise.all([hiding, showing]);
+    expect(store.phase).toBe('ready');
+    expect(store.positions.has('a::Right')).toBe(true);
+  });
+});
+
+async function waitUntil(condition: () => boolean): Promise<void> {
+  while (!condition()) {
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
+
 describe('undo and redo', () => {
   it('undoes and redoes a move, one step per drag', async () => {
     const store = await loadedStore();

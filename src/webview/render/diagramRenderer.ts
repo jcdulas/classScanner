@@ -490,11 +490,12 @@ export class DiagramRenderer {
     const from = new Map<string, Point>();
     for (const id of this.store.visibleNodeIds) {
       const view = this.cardLayer.view(id);
-      if (view !== undefined) {
+      // A card that was hidden (by a filter, for example) appears at its new place instead of flying in.
+      if (view !== undefined && view.container.visible) {
         from.set(id, { x: view.container.x, y: view.container.y });
       }
     }
-    this.animation = { from, to: new Map(this.store.positions), startTime: performance.now() };
+    this.animation ={ from, to: new Map(this.store.positions), startTime: performance.now() };
     this.edgeLayer.setVisible(false);
     this.groupLayer.boxContainer.visible = false;
     this.groupLayer.titleContainer.visible = false;

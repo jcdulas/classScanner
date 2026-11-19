@@ -26,7 +26,7 @@ import { groupKeyOf } from '../model/groups';
 import { pushOverlappingCards } from '../model/overlap';
 import { placeNewItems } from '../model/placement';
 import { GroupBox, computeGroupBoxes } from '../model/sceneGeometry';
-import { IsolationState, computeVisibleNodeIds, findNeighborhood } from '../model/visibility';
+import { IsolationState, computeVisibleNodeIds, findNeighborhood, passesEntityFilters } from '../model/visibility';
 
 export type ChangeTopic =
   /** A new graph was loaded: everything must be rebuilt. */
@@ -130,6 +130,8 @@ export class DiagramStore {
   isSidePanelOpen = true;
   lastLayoutDurationMs = 0;
 
+  /** Number of layouts started so far; tells a layout that ends whether a newer one replaced it. */
+  private layoutRequestCount = 0;
   private undoStack: ArrangementSnapshot[] = [];
   private redoStack: ArrangementSnapshot[] = [];
   private readonly listeners = new Set<Listener>();
@@ -237,10 +239,16 @@ export class DiagramStore {
     }
     const layout = this.layout;
     const grouping = this.grouping;
+    const requestNumber = ++this.layoutRequestCount;
     this.phase = 'layouting';
     this.emit(['ui']);
     try {
       const result = await this.layoutService.compute(this.buildLayoutInput());
+      if (requestNumber !== this.layoutRequestCount) {
+        // Another layout started meanwhile (two filters toggled in a row, for example): its
+        // result is the one to show. This one may place classes that are hidden by now.
+        return;
+      }
       this.positionsByLayout.set(layout, new Map(Object.entries(result.positions)));
       this.positionsGrouping[layout] = grouping;
       this.lastLayoutDurationMs = result.durationMs;
@@ -252,6 +260,9 @@ export class DiagramStore {
       const isShown = layout === this.layout && animate;
       this.emit(['positions', 'groups', 'ui'], isShown, isShown);
     } catch (error) {
+      if (requestNumber !== this.layoutRequestCount) {
+        return;
+      }
       this.phase = 'ready';
       this.failureMessage = `The layout failed: ${error instanceof Error ? error.message : String(error)}`;
       this.emit(['ui']);
@@ -293,8 +304,9 @@ export class DiagramStore {
 
   private buildLayoutInput(): LayoutInput {
     const structural = new Set(this.settings.structuralRelations);
+    // Classes hidden by a "Show" filter take no room; those hidden by namespace or folder keep theirs.
     const nodes = this.graph!.nodes
-      .filter((node) => !node.isExternal || this.filters.showExternal)
+      .filter((node) => passesEntityFilters(node, this.filters))
       .map((node) => {
         const card = this.cardLayouts.get(node.id)!;
         return { id: node.id, width: card.width, height: card.height, group: this.groupKeyByNode.get(node.id) ?? '' };
@@ -404,11 +416,32 @@ export class DiagramStore {
     }
   }
 
-  setFilters(filters: Partial<DiagramFilters>): void {
+  /**
+   * Changes some filters. The namespace and folder filters hide or show cards where they are.
+   * The "Show" filters (entity kinds, forward-declared classes) change which classes the layout
+   * places, so the layout is computed again: hidden classes leave no hole and shown ones get a
+   * real place. As this discards the manual moves, it can be undone (spec §4.4).
+   */
+  async setFilters(filters: Partial<DiagramFilters>): Promise<void> {
+    const changesPlacedClasses = filters.hiddenEntityKinds !== undefined || filters.showExternal !== undefined;
+    if (!changesPlacedClasses) {
+      this.filters = { ...this.filters, ...filters };
+      this.recomputeVisibility();
+      this.placeCardsWithoutPosition();
+      this.emit(['visibility', 'positions']);
+      return;
+    }
+    this.rememberForUndo();
     this.filters = { ...this.filters, ...filters };
     this.recomputeVisibility();
-    this.placeCardsWithoutPosition();
-    this.emit(['visibility', 'positions']);
+    // The other layouts were computed for the previous filters: they are computed again when shown.
+    for (const layout of Array.from(this.positionsByLayout.keys())) {
+      if (layout !== this.layout) {
+        this.positionsByLayout.delete(layout);
+      }
+    }
+    this.emit(['visibility']);
+    await this.computeLayout(true);
   }
 
   /**
@@ -549,6 +582,8 @@ export class DiagramStore {
     this.collapsedGroups = snapshot.collapsedGroups;
     this.recomputeGroupKeys();
     this.recomputeAllCardLayouts();
+    // The filters are not part of the snapshot: a class shown since then has no place in it yet.
+    this.placeCardsWithoutPosition();
     // The camera stays where it is: undoing a small move must not change the view.
     this.emit(['positions', 'cards', 'groups', 'ui'], true);
   }
