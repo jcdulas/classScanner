@@ -22,7 +22,7 @@ npm run package            # increments the patch version, then production build
 
 Run `npm run typecheck` and `npm test` after every change. Run `npm run test:integration` after any change to the extension host or the webview: it is the only test that runs the real webview. It writes PNG, SVG, schema and zip files to `out/integration/`; look at the PNG files to check the rendering. When the synthetic project exists, it also measures frame rates and relation toggle times (spec §8).
 
-After any change to the user interface or to the drawing, run `npm run preview` and look at the screenshot: it is the only way to see the HTML controls, which the PNG exports of the integration tests do not contain. Options: `--theme dark|light`, `--scenario default|selection|zoom|menu|zoomAt|doubleClick|drag|multiDrag|ctrlClickTwice|schemaPanel|search|toggleRow` (scripted user actions, see `test/preview/harness.html`), `--x 0.5 --y 0.5`, `--undo 1`, `--text area`, `--state '{...}'`, `--relations all`, `--size 1000x700`, `--folder test/synthetic-project`, `--output file.png`.
+After any change to the user interface or to the drawing, run `npm run preview` and look at the screenshot: it is the only way to see the HTML controls, which the PNG exports of the integration tests do not contain. Options: `--theme dark|light`, `--scenario default|selection|zoom|menu|menuAt|zoomAt|click|doubleClick|drag|multiDrag|ctrlClickTwice|schemaPanel|search|toggleRow` (scripted user actions, see `test/preview/harness.html`), `--x 0.5 --y 0.5`, `--undo 1`, `--text area`, `--alt 1` and `--count 2` (for `click`), `--state '{...}'`, `--relations all`, `--size 1000x700`, `--folder test/synthetic-project`, `--output file.png`.
 
 Press F5 in VS Code to try the extension by hand.
 
@@ -103,6 +103,7 @@ How a change flows in the webview: an action of `DiagramStore` changes the state
 Things that are easy to break:
 
 - The webview has a strict Content Security Policy. PixiJS needs the `pixi.js/unsafe-eval` import, and the layout worker is started from a `blob:` URL.
+- File paths of a graph are relative to `Graph.root`, which is not always the scanned folder: with a paired folder (spec §2.2) it is their common parent. Resolve files against `graph.root`, never against the folder of the panel.
 - Parser worker types live in `parserWorkerProtocol.ts` so that the extension never imports `parserWorker.ts`, whose top-level code starts a worker.
 - `src/webview/` must not import from `src/extension/`, `src/model/` or `src/scanner/` (Node APIs), only from `src/shared/`.
 
@@ -111,4 +112,6 @@ Things that are easy to break:
 - Every C++ construct the extractor supports has a fixture file in `test/fixtures/constructs` and a unit test that checks what is extracted (spec §9).
 - Logic that does not need the DOM (webview model, store, layouts, exports from the model) is unit-tested in Node.
 - Performance targets (spec §8) are measured on the synthetic project, not estimated. Update the measured column of the spec when they change.
-- Mouse interactions have no automated assertions. The preview scenarios play some of them (Ctrl+drag selection, wheel zoom, right-click) so that their result can be seen in a screenshot; check the others by hand with F5.
+- Mouse interactions have no automated assertions. The preview scenarios play some of them (Ctrl+drag selection, wheel zoom, right-click, click and Alt+click) so that their result can be seen in a screenshot, and the preview script prints the files a scenario asked the editor to open; check the others by hand with F5.
+- `test/fixtures/paired` has mirror `inc` and `src` trees, for the scan of paired folders (spec §2.2).
+- To pass `--state` to the preview on Windows, call `node scripts/previewWebview.mjs` directly (after `npm run build`): `npm run` mangles the quotes of its JSON.

@@ -49,7 +49,7 @@ Status: specification v1, implemented. Sections 8 and 11 give the measured resul
 
 The scan is always complete: no cache is kept between two scans. When a diagram is reopened, the folder is scanned again and the saved arrangement is reapplied (§6).
 
-While a diagram is open, saving a C++ file of its folder scans the folder again one second later (several saves in a row give one scan). The arrangement, the selection and the camera are kept; the progress is shown in the status bar only. The setting `classScanner.rescanOnSave` turns this off.
+While a diagram is open, saving a C++ file of its folder, or of its paired folder (§2.2), scans the folder again one second later (several saves in a row give one scan). The arrangement, the selection and the camera are kept; the progress is shown in the status bar only. The setting `classScanner.rescanOnSave` turns this off.
 
 ### 2.2 Depth and file selection
 
@@ -57,6 +57,14 @@ While a diagram is open, saving a C++ file of its folder scans the folder again 
 - The depth is asked the first time a folder is scanned, prefilled with the last value used. A folder that has a saved arrangement is scanned again with its saved depth, which "Change Scan Depth" changes.
 - Exclusions are configurable globs. Default: `**/build/**`, `**/out/**`, `**/node_modules/**`, `**/.git/**`, `**/third_party/**`, `**/external/**`.
 - Files above a size limit (default 2 MB) are skipped and listed in the scan report.
+
+Paired header and source folders. Many projects keep their headers and their sources in two sibling folders with the same tree inside, `inc/core/engine.h` and `src/core/engine.cpp`. Scanning `src/core` alone would find method definitions without their classes, so the two halves are scanned together:
+
+- When a folder of the scanned path, or the scanned folder itself, is named `src`, `source` or `sources`, the same path under a sibling named `inc`, `include` or `includes` is scanned too, if it exists; and the other way round. Names are compared without case. Scanning `project/src/core` also scans `project/inc/core`; scanning `project/inc` also scans `project/src`.
+- The closest such folder that has a counterpart on disk is used. Without one, the folder is scanned alone.
+- The depth and the exclusions apply to both folders.
+- File paths are then relative to the folder that contains the two trees (`project`), so they start with `src/` or `inc/`. The saved arrangement stays attached to the folder the user scanned.
+- The scan report and the status of the diagram name the paired folder.
 
 ### 2.3 Parser
 
@@ -121,6 +129,7 @@ Rules:
 - Edges from a class to itself are dropped.
 - Dependencies found in `.cpp` bodies are attached to the class that owns the method. Code in free functions is ignored.
 - An include is a relation between two files. Drawing it between every class of one file and every class of the other would add many edges that say nothing more, so it is drawn once, between the main class of each file: the class named like the file (`scene.h` and `Scene`), otherwise the first class that is not nested in another. For a `.cpp` file, the classes considered are those whose methods it defines.
+- Without the include paths of the compiler, an include is matched to a scanned file relative to the folder of the including file, then by path suffix (`<mylib/core/engine.h>` finds `include/mylib/core/engine.h`). When several files match, the one whose folders resemble most those of the including file wins: `#include "util.h"` in `src/core/engine.cpp` is `inc/core/util.h`, not `inc/net/util.h`.
 
 ## 4. Diagram
 
@@ -205,19 +214,27 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 | Ctrl+drag (Cmd on macOS), anywhere | Rectangle selection of several classes; with Shift, added to the selection |
 | Shift+drag on the background | Rectangle selection added to the selection |
 | Drag a card or a group title | Moves it. Dragging a selected card moves the whole selection |
-| Click on a class | Selects it alone, with neighborhood focus: its relations are highlighted, the rest is dimmed |
+| Click on a class | Selects it alone, with neighborhood focus: its relations are highlighted, the rest is dimmed. Nothing else: a click never opens a file |
 | Ctrl+click on a class (Cmd on macOS), or Shift+click | Adds the class to the selection, or removes it |
 | Click on a group title | Selects the classes of the group |
 | "Isolate" (context menu) | Shows only the class and its neighbors up to N levels (N adjustable from 1 to 5) |
-| Click on a member, Alt+click on a class | Opens the file at the declaration line in the editor |
+| Alt+click on a class | Opens what is under the pointer in the editor: the declaration of the member on a member line, the declaration of the class elsewhere |
 | Double-click on a card | Cycles the mode `auto` → `full` → `compact` |
 | Double-click on a group title | Collapses or expands the group |
-| Right-click | Context menu: display modes, isolate, go to source, exports of the selection, collapse the group |
+| Right-click | Context menu: display modes, isolate, open the header or the source file of the class, go to the member under the pointer, exports of the selection, collapse the group |
 | Ctrl+F | Search by name (substring, case-insensitive) among classes, methods and attributes. Enter recenters on the class of the result, Ctrl+Enter opens the result in the editor |
 | Ctrl+Z, Ctrl+Y | Undo and redo the changes of the arrangement: moves (one step per drag), display modes, collapsed groups, layout, grouping, "Recompute layout", the layout computed for a "Show" filter (the filter itself stays as it is). Up to 50 steps, kept until the next scan |
 | Escape | Closes the menu, then clears the selection, then leaves the isolation |
 
 A tooltip shows the qualified name of a card when its text is not readable, and the counts of a merged link.
+
+Each mouse gesture does one thing. A click selects, a double-click changes the display mode, a drag moves: none of them opens a file, so a file is never opened by accident, or twice by a double-click.
+
+Opening a class in the editor:
+
+- A class has up to two files to open: the file that declares it, usually a header, and the file that implements it, usually a `.cpp`. The selection bar and the context menu show one entry per file, named after it (`engine.h`, `engine.cpp`), so that the user chooses.
+- The implementation is the first method of the class defined outside of it, in another file than the declaration. When methods are defined in several files, the file named like the one of the declaration wins. When no method is found, it is the top of the companion source file of the header (§4.7), if there is one. A class that lives in a single file has one entry.
+- A file is shown in one editor only. If it already has a tab in another column than the diagram, that tab is shown. Otherwise it opens in the column on the right of the diagram, always the same one, as a preview tab that the next file replaces.
 
 The diagram fills the whole view; the user interface floats above it:
 
@@ -232,7 +249,7 @@ The diagram fills the whole view; the user interface floats above it:
   - filters by namespace and by folder (check box trees with a text filter), which hide cards in place.
 - **Bottom left**: status (classes shown, level of detail, scan duration), the scan depth, which is a button to change it, and access to the scan report.
 - **Bottom right**: zoom controls (zoom out, zoom level, zoom in, fit) above the minimap, which shows the groups and a draggable viewport rectangle.
-- **Selection bar** (bottom center, only while classes are selected): display mode of the selection, isolate and go to source for a single class, schema for a language model, sources as `.zip`, clear the selection.
+- **Selection bar** (bottom center, only while classes are selected): display mode of the selection; for a single class, isolate and one button per file to open (header, source file); schema for a language model, sources as `.zip`, clear the selection.
 
 "Fit" places the diagram in the part of the view that the floating panels leave free. Below 1280 px of width the controls of the top bars keep only their icon, and below 860 px so do the buttons.
 
@@ -285,7 +302,8 @@ Data model sent to the webview:
 
 ```ts
 interface Graph {
-  root: string;                 // scanned folder
+  root: string;                 // folder the file paths are relative to: the scanned folder,
+                                // or the parent of the scanned folder and its paired folder (§2.2)
   nodes: ClassNode[];
   edges: Edge[];
   files: string[];              // relative paths, referenced by index
@@ -298,6 +316,7 @@ interface ClassNode {
   namespace: string;
   file: number; line: number;   // declaration
   definitionFiles?: number[];   // other files that define its methods (.cpp)
+  implementation?: { file: number; line: number };  // where "open the source file" goes (§4.6)
   templateParams?: string[];
   specializations?: string[];
   isAbstract: boolean;
@@ -362,10 +381,10 @@ The measurements were made on the synthetic project of the test suite (`npm run 
 
 ## 9. Tests
 
-- **Unit tests** (`npm test`, vitest): a corpus of C++ files covering each construct (multiple inheritance, templates, nested classes, export macros, `#if`...) in `test/fixtures/constructs`, a small multi-file project in `test/fixtures/project`, and tests of name resolution, relations, card geometry, layouts, the webview store, the schema and the source file collection.
-- **Integration tests** (`npm run test:integration`): run the extension in VS Code 1.130.0 (or another version with `--vscode-version`), scan the fixture project, check that the webview reports the diagram on screen without error, check the saved arrangement, and export PNG, SVG, schema and `.zip` files to `out/integration/`. On the synthetic project they also measure frame times and relation toggle times.
+- **Unit tests** (`npm test`, vitest): a corpus of C++ files covering each construct (multiple inheritance, templates, nested classes, export macros, `#if`...) in `test/fixtures/constructs`, a small multi-file project in `test/fixtures/project`, a project with paired `inc` and `src` trees in `test/fixtures/paired`, and tests of name resolution, relations, card geometry, layouts, the webview store, the schema and the source file collection.
+- **Integration tests** (`npm run test:integration`): run the extension in VS Code 1.130.0 (or another version with `--vscode-version`), scan the fixture project, check that the webview reports the diagram on screen without error, check the saved arrangement, and export PNG, SVG, schema and `.zip` files to `out/integration/`. They also scan one half of a pair of folders, and check that opening a file twice from the diagram shows a single editor. On the synthetic project they also measure frame times and relation toggle times.
 - **Benchmark** (`npm run benchmark`): scan and layout times on the synthetic project.
-- **Preview** (`npm run preview`): renders the webview in a headless browser, outside of VS Code, and saves a screenshot. Scenarios play user actions first (Ctrl+drag selection, wheel zoom, right-click, double-click on a group, dragging a card, Ctrl+Z, typing in the search box), which shows that these interactions work.
+- **Preview** (`npm run preview`): renders the webview in a headless browser, outside of VS Code, and saves a screenshot. Scenarios play user actions first (Ctrl+drag selection, wheel zoom, right-click, click, double-click and Alt+click on a card, dragging a card, Ctrl+Z, typing in the search box), which shows that these interactions work; the script prints the files that the scenario asked the editor to open.
 - Not automated: assertions on mouse interactions, and validation on a real, large open-source project.
 
 ## 10. Milestones
@@ -379,7 +398,7 @@ All six milestones are implemented.
 5. **Arrangement**: manual moves, persistence, hierarchy and organic layouts, collapsible groups.
 6. **Finishing**: minimap, PNG and SVG export, themes, measuring and meeting the performance targets, `.vsix` packaging.
 
-Added after the first version: rectangle selection with Ctrl+drag, schema for language models, sources as a `.zip` archive.
+Added after the first version: rectangle selection with Ctrl+drag, schema for language models, sources as a `.zip` archive, paired header and source folders.
 
 ## 11. Points that were to be validated with a prototype
 

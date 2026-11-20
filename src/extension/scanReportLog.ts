@@ -9,6 +9,9 @@ export function logScanReport(output: vscode.OutputChannel, report: ScanReport):
   const depthText = report.depth < 0 ? 'unlimited' : String(report.depth);
   output.appendLine('');
   output.appendLine(`=== Scan of ${report.folder} (depth: ${depthText}) ===`);
+  if (report.pairedFolder !== undefined) {
+    output.appendLine(`Scanned together with its paired folder: ${report.pairedFolder}`);
+  }
   output.appendLine(`Duration: ${(report.durationMs / 1000).toFixed(1)} s`);
   output.appendLine(`Files scanned: ${report.scannedFileCount}`);
   output.appendLine(`Classes: ${report.nodeCount}`);

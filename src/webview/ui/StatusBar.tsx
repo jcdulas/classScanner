@@ -30,8 +30,8 @@ export function StatusPill({ controller }: ControllerProps) {
           <GlassButton icon="close" title="Exit isolation" onPress={() => store.clearIsolation()} />
         </span>
       )}
-      <span class="status-muted">
-        {report.scannedFileCount} files, {(report.durationMs / 1000).toFixed(1)} s
+      <span class="status-muted" title={report.pairedFolder === undefined ? undefined : `Scanned together with ${report.pairedFolder}`}>
+        {report.scannedFileCount} files{report.pairedFolder === undefined ? '' : ' in 2 folders'}, {(report.durationMs / 1000).toFixed(1)} s
       </span>
       <GlassButton
         label={report.depth < 0 ? 'Depth: all' : `Depth: ${report.depth}`}

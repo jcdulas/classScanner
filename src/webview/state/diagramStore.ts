@@ -6,7 +6,7 @@
 // renderer only redoes the work that is needed (for example, toggling a
 // relation kind only redraws the edges).
 
-import { ClassNode, Graph, RelationKind, ScanReport } from '../../shared/graphModel';
+import { ClassNode, Graph, Member, RelationKind, ScanReport } from '../../shared/graphModel';
 import { DiagramSettings } from '../../shared/messages';
 import {
   CameraState,
@@ -63,6 +63,8 @@ export interface ContextMenuState {
   screenX: number;
   screenY: number;
   nodeId?: string;
+  /** The member line of the card `nodeId` that was right-clicked, if any. */
+  member?: Member;
   groupKey?: string;
 }
 

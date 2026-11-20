@@ -2,7 +2,8 @@
 // interface without starting VS Code. Run `npm run build` first.
 //
 // Usage: node scripts/previewWebview.mjs [--theme dark|light]
-//        [--scenario default|selection|zoom|menu|zoomAt|doubleClick|drag|search|toggleRow] [--x 0.5 --y 0.5] [--undo 1] [--text area]
+//        [--scenario default|selection|zoom|menu|menuAt|zoomAt|click|doubleClick|drag|multiDrag|ctrlClickTwice|schemaPanel|search|toggleRow]
+//        [--x 0.5 --y 0.5] [--undo 1] [--text area] [--alt 1] [--count 2]
 //        [--folder test/fixtures/project] [--relations all|inherit,compose] [--size 1500x950]
 //        [--output out/preview/preview.png] [--state '{"simplifyCardsWhenZoomedOut":false}']
 //
@@ -10,6 +11,7 @@
 //
 // The page is test/preview/harness.html: it stands in for VS Code (theme variables and
 // acquireVsCodeApi) and can play a scenario of mouse actions before the screenshot.
+// The files that the scenario asked the editor to open are printed.
 
 import * as esbuild from 'esbuild';
 import { spawn } from 'node:child_process';
@@ -123,6 +125,8 @@ async function takeScreenshot(url) {
     }
     const screenshot = await send('Page.captureScreenshot', { format: 'png' });
     await writeFile(output, Buffer.from(screenshot.data, 'base64'));
+    const opened = (await send('Runtime.evaluate', { expression: 'window.previewOpenedSources.join(", ")' })).result.value;
+    console.log(opened === '' ? 'The scenario opened no file in the editor.' : `Files the scenario opened in the editor: ${opened}`);
     socket.close();
   } finally {
     browser.kill();
@@ -187,6 +191,8 @@ try {
     y: option('y', '0.5'),
     undo: option('undo', '0'),
     text: option('text', ''),
+    alt: option('alt', '0'),
+    count: option('count', '1'),
   });
   await takeScreenshot(`http://127.0.0.1:${address.port}/?${query}`);
   console.log(`Screenshot saved to ${output}`);

@@ -20,7 +20,7 @@ export interface DiscoveryOptions {
 
 export interface DiscoveredFile {
   absolutePath: string;
-  /** Path relative to the scanned folder, with forward slashes. */
+  /** Path relative to the listed folder, with forward slashes. */
   relativePath: string;
 }
 

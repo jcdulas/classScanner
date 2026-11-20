@@ -12,6 +12,8 @@
 
 The command is also in the Command Palette: **classScanner: Scan Folder for C++ Classes**.
 
+Headers in `inc`, sources in `src`? Scan either side: when the folder is inside a `src` (or `source`) folder and the same path exists under a sibling `inc` (or `include`) folder, or the other way round, both are scanned together. Scanning `project/src/core` also reads `project/inc/core`, so that classes find their methods.
+
 ## What you get
 
 ### A diagram that scales
@@ -28,7 +30,7 @@ Seven kinds of relations, each with its own switch and its UML notation: inherit
 
 ### Your code, read as it is
 
-Classes, structs, unions, enums and templates, with their members, visibility, and `static`, `virtual`, `const` and pure virtual markers. Methods are marked with a diamond and attributes with a circle, colored by visibility: green for public, yellow for protected, red for private. Click a member to jump to its declaration.
+Classes, structs, unions, enums and templates, with their members, visibility, and `static`, `virtual`, `const` and pure virtual markers. Methods are marked with a diamond and attributes with a circle, colored by visibility: green for public, yellow for protected, red for private. Open a class in its header or in its source file from the selection bar, and Alt + click a member to jump to its declaration.
 
 ### Layouts you can shape
 
@@ -50,15 +52,15 @@ Select classes and take them elsewhere:
 |---|---|
 | Mouse wheel | Zoom around the cursor |
 | Drag the background | Pan |
-| Click a card | Select it and highlight its relations |
+| Click a card | Select it and highlight its relations; a click never opens a file |
 | Ctrl + click a card (Cmd on macOS) | Add it to the selection, or remove it; Shift + click does the same |
 | Ctrl + drag (Cmd on macOS) | Select the cards in a rectangle; with Shift, add them to the selection |
 | Drag a card or a group title | Move it; dragging a selected card moves the whole selection |
-| Click a member line | Open the member's declaration |
-| Alt + click a card | Open the class declaration |
+| Alt + click a member line | Open the member's declaration |
+| Alt + click a card, elsewhere | Open the class declaration |
 | Double-click a card | Cycle its display mode: auto, full, compact |
 | Double-click a group title | Collapse or expand the group |
-| Right-click | Display modes, isolate, go to source, exports, collapse the group |
+| Right-click | Display modes, isolate, open the header or the source file, go to the member under the pointer, exports, collapse the group |
 | Ctrl + F | Search a class, a method or an attribute |
 | Ctrl + Z, Ctrl + Y | Undo and redo moves, display modes, collapsed groups and layout changes |
 | Escape | Close the menu, clear the selection, then leave the isolation |
@@ -70,7 +72,9 @@ The controls float above the diagram:
 - **Top right**: rescan and export.
 - **Side panel**: a switch per relation kind, what changes when zoomed out, the isolation depth, and filters by kind, namespace and folder.
 - **Bottom**: the status, the scan depth and the scan report on the left, zoom controls and the minimap on the right.
-- **Selection bar**: appears while classes are selected, with the actions that apply to them.
+- **Selection bar**: appears while classes are selected, with the actions that apply to them. For a single class it has one button per file, such as `engine.h` and `engine.cpp`: choose which one to open.
+
+A file opens in the column on the right of the diagram, and only once: opening it again shows the editor it already has.
 
 Two switches of the side panel, under **Zoomed out**, set what happens when you zoom out:
 
@@ -79,7 +83,7 @@ Two switches of the side panel, under **Zoomed out**, set what happens when you 
 
 **Recompute layout** lays the diagram out again. It reclaims the room left by cards made compact, and discards the manual moves of the current layout; like every change of the arrangement, it can be undone with Ctrl + Z. Checking or unchecking a kind under **Show** (classes, structs, unions, enums, templates, forward-declared only) does the same, so that hidden classes leave no hole; the namespace and folder filters hide cards without moving the others.
 
-While a diagram is open, saving a C++ file of its folder scans it again: the diagram follows your code, and keeps its arrangement. The depth of a folder is asked the first time only; click **Depth** in the status to change it.
+While a diagram is open, saving a C++ file of its folder (or of its paired folder) scans it again: the diagram follows your code, and keeps its arrangement. The depth of a folder is asked the first time only; click **Depth** in the status to change it.
 
 ### Schema for an LLM
 

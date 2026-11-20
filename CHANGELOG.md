@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.5
+
+- Paired header and source folders are scanned together: scanning a folder under `src` also scans the same path under a sibling `inc` or `include` folder, and the other way round. Classes get the methods defined in the other tree, and an `#include "util.h"` leads to the header of the mirror folder.
+- A class can be opened in its header or in its source file: the selection bar and the context menu have one entry per file (`engine.h`, `engine.cpp`).
+- A click on a card only selects it. It no longer opens a file when it lands on a member line, so selecting, dragging or double-clicking a card cannot open one by accident. Alt + click opens the member under the pointer, or the class; the context menu has a "Go to" entry for the member.
+- A file opened from the diagram is shown in a single editor, in the column on the right of the diagram, instead of a new column each time.
+
 ## 0.1.4
 
 - New extension icon, in the flat style of VS Code.

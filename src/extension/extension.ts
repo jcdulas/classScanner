@@ -26,6 +26,8 @@ export interface ClassScannerApi {
   measureActiveDiagramPerformance(): Promise<FrameStatistics[]>;
   /** Saves the sources of the given classes of the active diagram; returns the number of files. */
   exportActiveDiagramSources(nodeIds: string[], layout: ArchiveLayout, targetPath: string): Promise<number>;
+  /** Opens a file of the active diagram in the editor, as the diagram does. */
+  openActiveDiagramSource(relativePath: string, line: number): Promise<void>;
 }
 
 /** The state VS Code keeps for a panel across restarts (set by the webview with `setState`). */
@@ -155,6 +157,12 @@ export function activate(context: vscode.ExtensionContext): ClassScannerApi {
         return Promise.reject(new Error('No active diagram'));
       }
       return activePanel.writeSourceArchive(nodeIds, layout, targetPath);
+    },
+    openActiveDiagramSource: (relativePath, line) => {
+      if (activePanel === undefined) {
+        return Promise.reject(new Error('No active diagram'));
+      }
+      return activePanel.openSourceFile(relativePath, line);
     },
   };
 }

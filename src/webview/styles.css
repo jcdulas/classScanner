@@ -703,6 +703,13 @@ body {
   white-space: nowrap;
 }
 
+/* File names on the "open" buttons can be long: they are cut with an ellipsis. */
+.selection-bar .glass-button span {
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @keyframes rise {
   from {
     opacity: 0;

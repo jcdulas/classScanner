@@ -1,6 +1,7 @@
 // The right-click menu of the diagram (spec §4.3, §4.6).
 
 import { DiagramController } from '../controller';
+import { openTargetsOf } from '../model/openTargets';
 import { Icon, IconName } from './Icon';
 import { useStore } from './useStore';
 
@@ -25,7 +26,8 @@ export function ContextMenu({ controller }: ContextMenuProps) {
 
   const items: (MenuItem | 'separator')[] = [];
   const node = menu.nodeId === undefined ? undefined : store.nodeById.get(menu.nodeId);
-  if (node !== undefined) {
+  if (node !== undefined && store.graph !== undefined) {
+    const member = menu.member;
     // The display mode actions apply to the whole selection, which contains the clicked class.
     const ids = Array.from(store.selection);
     const classes = `${ids.length} ${ids.length === 1 ? 'class' : 'classes'}`;
@@ -39,7 +41,17 @@ export function ContextMenu({ controller }: ContextMenuProps) {
         icon: 'isolate',
         action: () => store.isolate(node.id),
       },
-      { label: 'Go to source', icon: 'code', action: () => controller.openSource(node.file, node.line) },
+      'separator',
+    );
+    // One entry per file of the class: its header, and its source file when there is one.
+    for (const target of openTargetsOf(node, store.graph.files)) {
+      const icon = target.isHeader ? 'header' : 'code';
+      items.push({ label: `Open ${target.fileName}`, icon, action: () => controller.openSource(target.file, target.line) });
+    }
+    if (member !== undefined) {
+      items.push({ label: `Go to ${member.name}`, icon: 'code', action: () => controller.openSource(member.file, member.line) });
+    }
+    items.push(
       'separator',
       { label: `Copy schema for an LLM (${classes})`, icon: 'copy', action: () => controller.copySelectionAsSchema() },
       { label: `Export sources as .zip (${classes})`, icon: 'archive', action: () => controller.exportSelectionSources() },

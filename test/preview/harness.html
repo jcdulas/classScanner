@@ -163,15 +163,45 @@
         const host = document.querySelector('.diagram-host');
         mouse('contextmenu', host.clientWidth * 0.55, host.clientHeight * 0.5, { button: 2 });
       },
+      // Right-click at the `x`, `y` point: on a card, the menu offers the files of the class.
+      menuAt: async () => {
+        const host = document.querySelector('.diagram-host');
+        mouse('contextmenu', host.clientWidth * Number(parameters.get('x')), host.clientHeight * Number(parameters.get('y')), { button: 2 });
+      },
+      // Click at the `x`, `y` point, `count` times in a row (2 is a double-click). With `alt=1`, hold Alt.
+      // The preview script prints the files that the clicks asked the editor to open.
+      click: async () => {
+        const host = document.querySelector('.diagram-host');
+        const x = host.clientWidth * Number(parameters.get('x'));
+        const y = host.clientHeight * Number(parameters.get('y'));
+        const options = { altKey: parameters.get('alt') === '1' };
+        const count = Number(parameters.get('count') || '1');
+        for (let index = 0; index < count; index++) {
+          mouse('pointerdown', x, y, options);
+          mouse('pointerup', x, y, options);
+        }
+        if (count === 2) {
+          mouse('dblclick', x, y, options);
+        }
+        await wait(1500);
+      },
     };
 
     const sentMessages = [];
+    // The `openSource` requests of the webview, as `path:line`, read by the preview script.
+    window.previewOpenedSources = [];
+    let graphFiles = [];
     window.acquireVsCodeApi = () => ({
       setState() {},
       postMessage(message) {
         sentMessages.push(message);
         if (message.type === 'ready') {
-          fetch('graph.json').then((response) => response.json()).then((graphMessage) => window.postMessage(graphMessage, '*'));
+          fetch('graph.json').then((response) => response.json()).then((graphMessage) => {
+            graphFiles = graphMessage.graph.files;
+            window.postMessage(graphMessage, '*');
+          });
+        } else if (message.type === 'openSource') {
+          window.previewOpenedSources.push(`${graphFiles[message.file]}:${message.line}`);
         } else if (message.type === 'diagramShown') {
           wait(900).then(() => SCENARIOS[scenario]()).then(() => wait(700)).then(() => {
             document.title = 'preview-ready';

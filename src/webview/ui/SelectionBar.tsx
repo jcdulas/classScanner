@@ -4,6 +4,7 @@
 
 import { DisplayMode } from '../../shared/savedState';
 import { DiagramController } from '../controller';
+import { openTargetsOf } from '../model/openTargets';
 import { GlassButton, Segmented, SegmentOption } from './controls';
 import { SchemaButton } from './SchemaButton';
 import { useStore } from './useStore';
@@ -27,6 +28,8 @@ export function SelectionBar({ controller }: SelectionBarProps) {
   const modes = new Set(ids.map((id) => store.displayModeOf(id)));
   const commonMode = modes.size === 1 ? Array.from(modes)[0] : undefined;
   const single = ids.length === 1 ? store.nodeById.get(ids[0]) : undefined;
+  // One button per file of the class: its header, and its source file when there is one.
+  const openTargets = single === undefined || store.graph === undefined ? [] : openTargetsOf(single, store.graph.files);
 
   return (
     <div class="selection-bar glass bar">
@@ -37,7 +40,15 @@ export function SelectionBar({ controller }: SelectionBarProps) {
       {single !== undefined && (
         <>
           <GlassButton icon="isolate" label="Isolate" title="Show only this class and its neighbors" onPress={() => store.isolate(single.id)} />
-          <GlassButton icon="code" label="Source" title="Open the declaration" onPress={() => controller.openSource(single.file, single.line)} />
+          {openTargets.map((target) => (
+            <GlassButton
+              key={target.file}
+              icon={target.isHeader ? 'header' : 'code'}
+              label={target.fileName}
+              title={target.description}
+              onPress={() => controller.openSource(target.file, target.line)}
+            />
+          ))}
         </>
       )}
       <SchemaButton controller={controller} />

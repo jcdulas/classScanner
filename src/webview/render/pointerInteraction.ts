@@ -7,11 +7,16 @@
 //   drag a card or a group title   move it; dragging a selected card moves the whole selection
 //   click a card                   select it alone
 //   Ctrl/Cmd + click a card        add it to the selection, or remove it (Shift + click does the same)
-//   click a member line            open the member's declaration
-//   Alt + click a card             open the class declaration
+//   Alt + click a card             open what is under the pointer in the editor: the declaration
+//                                  of the member on a member line, of the class elsewhere
 //   double-click a card            cycle its display mode
 //   double-click a group title     collapse or expand the group
 //   right-click                    context menu
+//
+// Each gesture does one thing. In particular a plain click only selects: it
+// never opens a file, so that selecting, dragging or double-clicking a card
+// cannot open one by accident. Files are opened with Alt + click, the context
+// menu or the selection bar.
 //
 // A press only becomes a drag once the pointer has moved a few pixels, so
 // that a slightly shaky click is still a click.
@@ -188,18 +193,11 @@ export class PointerInteraction {
       return;
     }
     if (pressed.modifiers.alt) {
-      this.context.openSource(node.file, node.line);
+      const location = this.context.rowAt(target.id, world)?.member ?? node;
+      this.context.openSource(location.file, location.line);
       return;
     }
-    if (keepsSelection) {
-      store.select([target.id], 'toggle');
-      return;
-    }
-    store.select([target.id], 'replace');
-    const member = this.context.rowAt(target.id, world)?.member;
-    if (member !== undefined) {
-      this.context.openSource(member.file, member.line);
-    }
+    store.select([target.id], keepsSelection ? 'toggle' : 'replace');
   }
 
   private onDoubleClick(event: MouseEvent): void {
@@ -223,12 +221,14 @@ export class PointerInteraction {
     event.preventDefault();
     const { store } = this.context;
     const screen = this.screenPoint(event);
-    const target = this.context.hitTest(this.worldPoint(event));
+    const world = this.worldPoint(event);
+    const target = this.context.hitTest(world);
     if (target?.kind === 'card') {
       if (!store.selection.has(target.id)) {
         store.select([target.id], 'replace');
       }
-      store.openContextMenu({ screenX: screen.x, screenY: screen.y, nodeId: target.id });
+      const member = this.context.rowAt(target.id, world)?.member;
+      store.openContextMenu({ screenX: screen.x, screenY: screen.y, nodeId: target.id, member });
     } else if (target !== undefined) {
       store.openContextMenu({ screenX: screen.x, screenY: screen.y, groupKey: target.key });
     } else {

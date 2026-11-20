@@ -165,7 +165,9 @@ export class DiagramController {
     if (ids.length === 0) {
       throw new Error(scope === 'selection' ? 'No class is selected.' : 'No class is visible.');
     }
-    const projectName = graph.root.split(/[\\/]/).filter((part) => part !== '').pop() ?? graph.root;
+    // The name of the folder the user scanned; the root of the graph can be its parent (spec §2.2).
+    const scannedFolder = this.store.report?.folder ?? graph.root;
+    const projectName = scannedFolder.split(/[\\/]/).filter((part) => part !== '').pop() ?? scannedFolder;
     return buildLlmSchema(graph, ids, { projectName, relationKinds: this.store.activeRelations, detail });
   }
 

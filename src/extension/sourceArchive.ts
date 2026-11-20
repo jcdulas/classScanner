@@ -11,16 +11,16 @@ import { zipEntryNames } from '../model/sourceFiles';
 
 export type ArchiveLayout = 'tree' | 'flat';
 
-/** Writes the archive and returns the number of files it contains. */
+/** Writes the archive and returns the number of files it contains. The paths are relative to `rootFolder`. */
 export async function writeSourceArchive(
-  scannedFolder: string,
+  rootFolder: string,
   relativePaths: string[],
   layout: ArchiveLayout,
   targetPath: string,
 ): Promise<number> {
   const entries: Record<string, Uint8Array> = {};
   for (const [relativePath, entryName] of zipEntryNames(relativePaths, layout)) {
-    entries[entryName] = await readFile(path.join(scannedFolder, relativePath));
+    entries[entryName] = await readFile(path.join(rootFolder, relativePath));
   }
   await writeFile(targetPath, zipSync(entries, { level: 6 }));
   return relativePaths.length;

@@ -3,10 +3,12 @@
 // Without the compiler's include paths, an include is matched in two steps:
 //   1. relative to the folder of the including file, as the compiler does for `#include "..."`;
 //   2. otherwise, any project file whose path ends with the included path, so
-//      that `#include <mylib/core/engine.h>` finds `include/mylib/core/engine.h`.
+//      that `#include <mylib/core/engine.h>` finds `include/mylib/core/engine.h`,
+//      and `#include "engine.h"` in `src/core/engine.cpp` finds `inc/core/engine.h`.
 // Includes that match no scanned file, such as `<vector>`, are ignored.
 
 import path from 'node:path';
+import { folderResemblance } from './companionFiles';
 
 export class IncludeResolver {
   private readonly projectFiles: Set<string>;
@@ -39,8 +41,13 @@ export class IncludeResolver {
     if (matches.length === 0) {
       return undefined;
     }
-    // Several matches are possible (`a/util.h` and `b/util.h` for `util.h`): the shortest path wins.
-    matches.sort((first, second) => first.length - second.length || first.localeCompare(second));
+    // Several matches are possible (`inc/core/util.h` and `inc/net/util.h` for `util.h`). The
+    // file whose folders resemble most those of the including file wins: `src/core/engine.cpp`
+    // most likely includes the `util.h` of `inc/core`. Then the shortest path wins.
+    const resemblance = (file: string) => folderResemblance(includingFile, file);
+    matches.sort(
+      (first, second) => resemblance(second) - resemblance(first) || first.length - second.length || first.localeCompare(second),
+    );
     return matches[0];
   }
 }

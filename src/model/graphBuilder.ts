@@ -4,12 +4,14 @@
 //   1. merge the declarations of each class: a class can be declared in
 //      several `#if` branches, and its methods can be defined in .cpp files;
 //   2. create "external" nodes for classes that are only forward-declared;
-//   3. resolve every type name and create the edges of the seven relation kinds.
+//   3. resolve every type name and create the edges of the seven relation kinds;
+//   4. find the file that implements each class, when it is not the file that declares it.
 
-import { LookupScope, TypeDeclaration, FileSymbols, TypeExpression } from '../parser/fileSymbols';
+import { LookupScope, OutOfClassMethod, TypeDeclaration, FileSymbols, TypeExpression } from '../parser/fileSymbols';
 import { collectTypeNames } from '../parser/typeReader';
 import { ClassNode, Graph, Member, MemberFlags } from '../shared/graphModel';
 import { EdgeCollector } from './edgeCollector';
+import { ImplementationFinder } from './implementationFinder';
 import { IncludeResolver } from './includeResolver';
 import { MemberRelationClassifier } from './memberRelations';
 import { TypeResolver } from './typeResolver';
@@ -38,6 +40,8 @@ class GraphBuilder {
   /** For include edges: the classes declared in each file, or whose methods are defined in it. */
   private readonly classIdsByFile = new Map<string, Set<string>>();
   private readonly declaredClassIdsByFile = new Map<string, Set<string>>();
+  /** For each class, the files that define its methods outside of it, with the line of the first one. */
+  private readonly definitionLinesById = new Map<string, Map<number, number>>();
   private readonly edges = new EdgeCollector();
   private readonly unresolvedTypeNames = new Map<string, number>();
   private resolver!: TypeResolver;
@@ -67,10 +71,11 @@ class GraphBuilder {
     }
     for (const fileSymbols of this.fileSymbolsList) {
       for (const method of fileSymbols.outOfClassMethods) {
-        this.addOutOfClassMethodEdges(method.ownerName, method.scope, method.signatureTypes, method.bodyTypeNames, fileSymbols);
+        this.addOutOfClassMethod(method, fileSymbols);
       }
     }
     this.addIncludeEdges();
+    this.findImplementations();
     for (const name of this.classifier.unresolvedNames) {
       this.countUnresolved(name);
     }
@@ -229,14 +234,9 @@ class GraphBuilder {
     }
   }
 
-  private addOutOfClassMethodEdges(
-    ownerName: string,
-    definitionScope: LookupScope,
-    signatureTypes: TypeExpression[],
-    bodyTypeNames: string[],
-    fileSymbols: FileSymbols,
-  ): void {
-    const ownerId = this.resolveClass(ownerName, definitionScope, fileSymbols.usingNamespaces);
+  /** A method defined outside its class: records where, and adds the dependencies of its code. */
+  private addOutOfClassMethod(method: OutOfClassMethod, fileSymbols: FileSymbols): void {
+    const ownerId = this.resolveClass(method.ownerName, method.scope, fileSymbols.usingNamespaces);
     if (ownerId === undefined) {
       return;
     }
@@ -245,10 +245,13 @@ class GraphBuilder {
     const fileIndex = this.fileIndexByPath.get(fileSymbols.file)!;
     if (fileIndex !== owner.file) {
       addUniqueNumber((owner.definitionFiles ??= []), fileIndex);
+      const definitionLines = this.definitionLinesById.get(ownerId) ?? new Map<number, number>();
+      definitionLines.set(fileIndex, Math.min(method.line, definitionLines.get(fileIndex) ?? method.line));
+      this.definitionLinesById.set(ownerId, definitionLines);
     }
     // Inside `Engine::run`, names are looked up in the scope of class Engine first.
-    const ownerScope = this.scopeOfClass(ownerId, definitionScope.templateParameters);
-    this.addDependencies(ownerId, signatureTypes, bodyTypeNames, ownerScope, fileSymbols.usingNamespaces);
+    const ownerScope = this.scopeOfClass(ownerId, method.scope.templateParameters);
+    this.addDependencies(ownerId, method.signatureTypes, method.bodyTypeNames, ownerScope, fileSymbols.usingNamespaces);
   }
 
   private addDependencies(
@@ -333,6 +336,22 @@ class GraphBuilder {
       return nameInNamespace.includes('::');
     };
     return ids.find((id) => !isNested(id)) ?? ids[0];
+  }
+
+  // ---- Step 3: implementation files ----
+
+  private findImplementations(): void {
+    const finder = new ImplementationFinder(this.fileSymbolsList.map((symbols) => symbols.file));
+    for (const node of this.nodesById.values()) {
+      // A class that is only forward-declared has no file of its own.
+      if (node.isExternal) {
+        continue;
+      }
+      const implementation = finder.find(node.file, this.definitionLinesById.get(node.id) ?? new Map<number, number>());
+      if (implementation !== undefined) {
+        node.implementation = implementation;
+      }
+    }
   }
 
   // ---- Helpers ----

@@ -55,6 +55,8 @@ export class DiagramPanel {
   private scanCancellation: vscode.CancellationTokenSource | undefined;
   /** The last graph sent; the webview refers to files by their index in `files`. */
   private lastGraph: Graph | undefined;
+  /** The header or source folder scanned together with the folder of the panel (spec §2.2). */
+  private pairedFolder: string | undefined;
   private pendingPerformanceMeasure: ((statistics: FrameStatistics[]) => void) | undefined;
   private pendingSelectionRequest: ((nodeIds: string[]) => void) | undefined;
   private rescanTimer: NodeJS.Timeout | undefined;
@@ -113,18 +115,24 @@ export class DiagramPanel {
     if (!settings.rescanOnSave || document.uri.scheme !== 'file') {
       return;
     }
-    const relativePath = path.relative(this.target.folder, document.uri.fsPath);
-    const isInsideFolder = relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
     const extensions = settings.extensions.map((extension) => extension.toLowerCase());
-    if (!isInsideFolder || !extensions.includes(path.extname(relativePath).toLowerCase())) {
+    if (!extensions.includes(path.extname(document.uri.fsPath).toLowerCase())) {
       return;
     }
-    const folderDepth = relativePath.split(path.sep).length - 1;
-    if (this.target.depth >= 0 && folderDepth > this.target.depth) {
-      return; // The file is deeper than the scan goes.
+    const scannedFolders = this.pairedFolder === undefined ? [this.target.folder] : [this.target.folder, this.pairedFolder];
+    if (!scannedFolders.some((folder) => this.isScannedIn(folder, document.uri.fsPath))) {
+      return;
     }
     clearTimeout(this.rescanTimer);
     this.rescanTimer = setTimeout(() => void this.scan(undefined, true), RESCAN_DELAY_MS);
+  }
+
+  /** True when the scan of `folder` reaches the file: it is inside, and not deeper than the scan goes. */
+  private isScannedIn(folder: string, filePath: string): boolean {
+    const relativePath = path.relative(folder, filePath);
+    const isInsideFolder = relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
+    const folderDepth = relativePath.split(path.sep).length - 1;
+    return isInsideFolder && (this.target.depth < 0 || folderDepth <= this.target.depth);
   }
 
   reveal(): void {
@@ -156,6 +164,7 @@ export class DiagramPanel {
         },
       );
       logScanReport(this.services.output, result.report);
+      this.pairedFolder = result.report.pairedFolder;
       await this.sendGraph(result);
     } catch (error) {
       if (error instanceof ScanCancelledError) {
@@ -219,7 +228,7 @@ export class DiagramPanel {
       throw new Error('The folder has not been scanned yet.');
     }
     const files = collectSourceFiles(this.lastGraph, nodeIds);
-    return writeSourceArchive(this.target.folder, files, layout, targetPath);
+    return writeSourceArchive(this.lastGraph.root, files, layout, targetPath);
   }
 
   /** Asks the webview to measure frame times while panning (spec §8). Used by the integration tests. */
@@ -298,9 +307,13 @@ export class DiagramPanel {
           this.pendingGraphMessage = undefined;
         }
         return;
-      case 'openSource':
-        void this.openSource(message.file, message.line);
+      case 'openSource': {
+        const relativePath = this.lastGraph?.files[message.file];
+        if (relativePath !== undefined) {
+          void this.openSourceFile(relativePath, message.line);
+        }
         return;
+      }
       case 'saveState':
         this.stateStore.write(message.state, this.target.depth).catch((error: unknown) => {
           this.services.output.appendLine(`Could not save the diagram arrangement: ${String(error)}`);
@@ -354,18 +367,41 @@ export class DiagramPanel {
     }
   }
 
-  private async openSource(fileIndex: number, line: number): Promise<void> {
-    const relativePath = this.lastGraph?.files[fileIndex];
-    if (relativePath === undefined) {
+  /** Opens a file of the last graph in the editor, at a 1-based line (spec §4.6). */
+  async openSourceFile(relativePath: string, line: number): Promise<void> {
+    if (this.lastGraph === undefined) {
       return;
     }
-    const uri = vscode.Uri.file(path.join(this.target.folder, relativePath));
+    const uri = vscode.Uri.file(path.join(this.lastGraph.root, relativePath));
     const position = new vscode.Position(Math.max(0, line - 1), 0);
     await vscode.window.showTextDocument(uri, {
-      viewColumn: vscode.ViewColumn.Beside,
+      viewColumn: this.columnToOpenIn(uri),
       selection: new vscode.Range(position, position),
       preview: true,
     });
+  }
+
+  /**
+   * The editor column in which to show a file, chosen so that a file is never opened twice.
+   *
+   * A file that already has a tab in another column is shown there. Otherwise files go to the
+   * column on the right of the diagram, always the same one. `ViewColumn.Beside` cannot be
+   * used: it means "beside the active editor", and after a first file was opened the active
+   * editor is that file, so the next one opened in a third column, and so on.
+   */
+  private columnToOpenIn(uri: vscode.Uri): vscode.ViewColumn {
+    const diagramColumn = this.webviewPanel.viewColumn;
+    for (const group of vscode.window.tabGroups.all) {
+      // A tab in the column of the diagram does not count: showing it would hide the diagram.
+      if (group.viewColumn === diagramColumn) {
+        continue;
+      }
+      const showsFile = group.tabs.some((tab) => tab.input instanceof vscode.TabInputText && isSameFile(tab.input.uri, uri));
+      if (showsFile) {
+        return group.viewColumn;
+      }
+    }
+    return diagramColumn === undefined ? vscode.ViewColumn.Beside : diagramColumn + 1;
   }
 
   private post(message: HostToWebviewMessage): void {
@@ -387,6 +423,14 @@ async function askArchiveLayout(): Promise<ArchiveLayout | undefined> {
   ];
   const choice = await vscode.window.showQuickPick(choices, { title: 'Layout of the .zip archive' });
   return choice?.layout;
+}
+
+/** Windows paths are case-insensitive: the same file can be written with another case there. */
+function isSameFile(first: vscode.Uri, second: vscode.Uri): boolean {
+  if (process.platform === 'win32') {
+    return first.fsPath.toLowerCase() === second.fsPath.toLowerCase();
+  }
+  return first.fsPath === second.fsPath;
 }
 
 function panelTitle(folder: string): string {

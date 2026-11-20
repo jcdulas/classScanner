@@ -118,7 +118,7 @@ export interface IncludeDirective {
 }
 
 export interface FileSymbols {
-  /** Path relative to the scanned folder, with forward slashes. */
+  /** Path relative to the root of the graph (the scanned folder, in general), with forward slashes. */
   file: string;
   includes: IncludeDirective[];
   /** Namespaces made visible by `using namespace X;` anywhere in the file. */

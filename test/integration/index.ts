@@ -28,6 +28,8 @@ export async function run(): Promise<void> {
   await testFixtureProject(api);
   await testRescanOnSave(api);
   await testSyntheticProjectIfPresent(api);
+  // Last, because it opens text editors next to the diagrams, which would change the frame times measured above.
+  await testPairedFolders(api);
 
   assert.deepEqual(webviewErrors, [], 'The webview reported no error');
   console.log(`Integration tests passed on VS Code ${vscode.version}.`);
@@ -109,6 +111,42 @@ async function testRescanOnSave(api: ClassScannerApi): Promise<void> {
     await restored;
   }
   console.log('Rescan on save: the diagram followed a saved file.');
+}
+
+/**
+ * A folder under `src` is scanned together with its counterpart under `inc` (spec §2.2), and
+ * opening a file from the diagram several times shows a single editor (spec §4.6).
+ */
+async function testPairedFolders(api: ClassScannerApi): Promise<void> {
+  const pairedProject = path.join(PROJECT_ROOT, 'test', 'fixtures', 'paired');
+  const shown = waitForEvent(api.onDiagramShown, 60_000);
+  await api.scanFolder(path.join(pairedProject, 'src', 'core'), -1);
+  const info = await shown;
+  // Engine and Timer are declared in inc/core: the scan of src/core alone would find no class.
+  assert.equal(info.visibleNodeCount, 2);
+
+  const zipPath = path.join(OUTPUT_FOLDER, 'paired-sources.zip');
+  await api.exportActiveDiagramSources(['app::Engine'], 'tree', zipPath);
+  assert.deepEqual(Object.keys(unzipSync(await readFile(zipPath))).sort(), ['inc/core/engine.h', 'src/core/engine.cpp']);
+
+  // The first opening gives the focus to the new editor. The second one must reuse that
+  // editor instead of opening the file again beside it.
+  const header = path.join(pairedProject, 'inc', 'core', 'engine.h');
+  await api.openActiveDiagramSource('inc/core/engine.h', 8);
+  const groupCount = vscode.window.tabGroups.all.length;
+  await api.openActiveDiagramSource('inc/core/engine.h', 11);
+  assert.equal(countTabsShowing(header), 1, 'The header is open in one editor only');
+  assert.equal(vscode.window.activeTextEditor?.selection.active.line, 10, 'The editor moved to the requested line');
+  // The source file of the class goes to the same column as its header.
+  await api.openActiveDiagramSource('src/core/engine.cpp', 7);
+  assert.equal(countTabsShowing(path.join(pairedProject, 'src', 'core', 'engine.cpp')), 1);
+  assert.equal(vscode.window.tabGroups.all.length, groupCount, 'No editor column was added');
+  console.log('Paired folders: src/core was scanned with inc/core, and files open in a single editor.');
+}
+
+function countTabsShowing(filePath: string): number {
+  const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs);
+  return tabs.filter((tab) => tab.input instanceof vscode.TabInputText && tab.input.uri.fsPath.toLowerCase() === filePath.toLowerCase()).length;
 }
 
 async function testSyntheticProjectIfPresent(api: ClassScannerApi): Promise<void> {
