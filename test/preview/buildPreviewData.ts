@@ -19,13 +19,13 @@ export async function buildPreviewData(
   const nodeModules = path.join(projectRoot, 'node_modules');
   const { graph, report } = await scanFolder({
     folder,
-    discovery: { maxDepth: -1, extensions: ['.cpp', '.hpp', '.h'], exclude: ['**/build/**'], maxFileSizeBytes: 2048 * 1024 },
+    discovery: { maxDepth: -1, extensions: ['.cpp', '.hpp', '.h'], exclude: ['**/build/**'] },
     parseFiles: createInProcessParseFunction(
       {
         runtime: path.join(nodeModules, 'web-tree-sitter', 'web-tree-sitter.wasm'),
         cppGrammar: path.join(nodeModules, 'tree-sitter-cpp', 'tree-sitter-cpp.wasm'),
       },
-      [],
+      { ignoredMacros: [], maxFileSizeBytes: 2048 * 1024 },
     ),
   });
   const relations = activeRelations === 'all' ? ALL_RELATION_KINDS : (activeRelations.split(',') as RelationKind[]);

@@ -2,7 +2,8 @@
 //
 // Run with `npm run benchmark` after `npm run generate:synthetic`. It uses
 // the real worker pool and the bundled worker script from dist/, so it
-// measures what the extension does.
+// measures what the extension does. `npm run benchmark -- --latency 10` runs
+// it on a simulated slow disk (slowDisk.cjs).
 
 import path from 'node:path';
 import { createWorkerParseFunction } from '../../src/scanner/parserPool';
@@ -18,15 +19,21 @@ const SYNTHETIC_PROJECT = path.join(PROJECT_ROOT, 'test', 'synthetic-project');
 
 async function main(): Promise<void> {
   const scanStart = Date.now();
+  let listingDuration = 0;
   const { graph, report } = await scanFolder({
     folder: SYNTHETIC_PROJECT,
     discovery: {
       maxDepth: -1,
       extensions: ['.cpp', '.hpp', '.h'],
       exclude: [],
-      maxFileSizeBytes: 2048 * 1024,
     },
-    parseFiles: createWorkerParseFunction(path.join(PROJECT_ROOT, 'dist', 'parserWorker.js'), { ignoredMacros: [] }),
+    parseFiles: createWorkerParseFunction(path.join(PROJECT_ROOT, 'dist', 'parserWorker.js'), {
+      ignoredMacros: [],
+      maxFileSizeBytes: 2048 * 1024,
+    }),
+    onDiscovered: () => {
+      listingDuration = Date.now() - scanStart;
+    },
   });
   const scanDuration = Date.now() - scanStart;
 
@@ -34,7 +41,7 @@ async function main(): Promise<void> {
   console.log(`Classes: ${graph.nodes.length}`);
   console.log(`Edges:   ${graph.edges.length} ${JSON.stringify(report.edgeCounts)}`);
   console.log(`Parse errors: ${report.parseErrorCount}, unresolved references: ${report.unresolvedTypeReferenceCount}`);
-  console.log(`Scan:    ${scanDuration} ms (target: under 15000 ms)`);
+  console.log(`Scan:    ${scanDuration} ms, of which ${listingDuration} ms to list the files (target: under 15000 ms)`);
 
   // The layouts run in a web worker in the extension; the same code runs here in Node.
   const metrics = { charWidth: 7.2 };

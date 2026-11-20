@@ -14,7 +14,7 @@ npm run typecheck          # tsc on the Node code, then on the webview code
 npm test                   # unit tests (vitest), about 1 s
 npm run test:integration   # builds, then runs the extension in VS Code 1.130.0
 npm run generate:synthetic # creates test/synthetic-project (1500 classes)
-npm run benchmark          # scan and layout times on the synthetic project
+npm run benchmark          # scan and layout times on the synthetic project; add `-- --latency 10` to simulate a network drive
 npm run preview            # screenshot of the webview in headless Chrome, written to out/preview/
 npm run icon               # renders assets/icon.svg to assets/icon.png (the extension icon)
 npm run package            # increments the patch version, then production build and .vsix
@@ -105,6 +105,7 @@ Things that are easy to break:
 - The webview has a strict Content Security Policy. PixiJS needs the `pixi.js/unsafe-eval` import, and the layout worker is started from a `blob:` URL.
 - File paths of a graph are relative to `Graph.root`, which is not always the scanned folder: with a paired folder (spec §2.2) it is their common parent. Resolve files against `graph.root`, never against the folder of the panel.
 - Text is sharp only when its font was drawn for its exact size on screen and it starts on a whole device pixel (`src/webview/render/pixelFonts.ts`, spec §4.1). A new text of the diagram takes its font and its position from `PixelFonts` (`fontFor`, `snap`) and is created again when the zoom settles (`drawTextFor` in `diagramRenderer.ts`). Check text changes with `npm run preview` at `--pixel-ratio 1`, `1.5` and `2`.
+- The scan must stay fast on network drives, where every file system call costs a round trip (spec §2.3): no call per file while listing, and synchronous reads in the parser workers. Measure a change of the scan with `npm run benchmark -- --latency 10`.
 - Parser worker types live in `parserWorkerProtocol.ts` so that the extension never imports `parserWorker.ts`, whose top-level code starts a worker.
 - `src/webview/` must not import from `src/extension/`, `src/model/` or `src/scanner/` (Node APIs), only from `src/shared/`.
 

@@ -10,7 +10,7 @@ import { Worker } from 'node:worker_threads';
 import { FileSymbols } from '../parser/fileSymbols';
 import { ParseBatchRequest, ParserWorkerMessage, ParserWorkerOptions } from '../parser/parserWorkerProtocol';
 import { DiscoveredFile } from './fileDiscovery';
-import { ParseFilesFunction } from './scanFolder';
+import { ParseFilesFunction, ParsedFiles } from './scanFolder';
 
 const FILES_PER_BATCH = 20;
 const MAX_WORKER_COUNT = 8;
@@ -29,7 +29,7 @@ function parseWithWorkers(
   files: DiscoveredFile[],
   onProgress: (parsedFileCount: number) => void,
   isCancelled: () => boolean,
-): Promise<FileSymbols[]> {
+): Promise<ParsedFiles> {
   const batches: DiscoveredFile[][] = [];
   for (let start = 0; start < files.length; start += FILES_PER_BATCH) {
     batches.push(files.slice(start, start + FILES_PER_BATCH));
@@ -40,6 +40,7 @@ function parseWithWorkers(
   return new Promise((resolve, reject) => {
     const workers: Worker[] = [];
     const results: FileSymbols[] = [];
+    const skippedLargeFiles: string[] = [];
     let nextBatchIndex = 0;
     let finishedBatchCount = 0;
     let isSettled = false;
@@ -78,18 +79,19 @@ function parseWithWorkers(
         return;
       }
       results.push(...message.results);
+      skippedLargeFiles.push(...message.skippedLargeFiles);
       finishedBatchCount++;
-      onProgress(results.length);
+      onProgress(results.length + skippedLargeFiles.length);
       if (finishedBatchCount === batches.length) {
         stopAll();
-        resolve(results);
+        resolve({ fileSymbols: results, skippedLargeFiles });
       } else {
         sendNextBatch(worker);
       }
     };
 
     if (batches.length === 0) {
-      resolve([]);
+      resolve({ fileSymbols: [], skippedLargeFiles: [] });
       return;
     }
     for (let index = 0; index < workerCount; index++) {

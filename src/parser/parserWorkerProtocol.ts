@@ -9,6 +9,8 @@ import { FileSymbols } from './fileSymbols';
 /** Passed once to each worker, as its `workerData`. */
 export interface ParserWorkerOptions {
   ignoredMacros: string[];
+  /** Larger files are not parsed: they are listed in the scan report. */
+  maxFileSizeBytes: number;
 }
 
 export interface ParseBatchRequest {
@@ -17,5 +19,5 @@ export interface ParseBatchRequest {
 }
 
 export type ParserWorkerMessage =
-  | { type: 'batchParsed'; batchId: number; results: FileSymbols[] }
+  | { type: 'batchParsed'; batchId: number; results: FileSymbols[]; skippedLargeFiles: string[] }
   | { type: 'batchFailed'; batchId: number; message: string };

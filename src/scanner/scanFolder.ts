@@ -13,14 +13,21 @@ import path from 'node:path';
 import { buildGraph } from '../model/graphBuilder';
 import { FileSymbols } from '../parser/fileSymbols';
 import { ALL_RELATION_KINDS, Graph, RelationKind, ScanReport } from '../shared/graphModel';
-import { DiscoveredFile, DiscoveryOptions, DiscoveryResult, discoverFiles } from './fileDiscovery';
+import { DiscoveredFile, DiscoveryOptions, discoverFiles } from './fileDiscovery';
 import { findPairedFolder } from './pairedFolder';
 
+export interface ParsedFiles {
+  fileSymbols: FileSymbols[];
+  /** Relative paths of the files that were not parsed because they are above the size limit. */
+  skippedLargeFiles: string[];
+}
+
+/** Reads and parses files. `onProgress` gets the number of files done so far, skipped ones included. */
 export type ParseFilesFunction = (
   files: DiscoveredFile[],
   onProgress: (parsedFileCount: number) => void,
   isCancelled: () => boolean,
-) => Promise<FileSymbols[]>;
+) => Promise<ParsedFiles>;
 
 export interface ScanRequest {
   folder: string;
@@ -45,13 +52,12 @@ export async function scanFolder(request: ScanRequest): Promise<ScanResult> {
   const paired = await findPairedFolder(request.folder);
   const root = paired?.commonParent ?? request.folder;
   const scannedFolders = paired === undefined ? [request.folder] : [request.folder, paired.folder];
-  const discovery = await discoverFilesOfFolders(root, scannedFolders, request.discovery);
-  request.onDiscovered?.(discovery.files.length);
+  const files = await discoverFilesOfFolders(root, scannedFolders, request.discovery);
+  request.onDiscovered?.(files.length);
 
-  const totalFileCount = discovery.files.length;
-  const fileSymbols = await request.parseFiles(
-    discovery.files,
-    (parsedFileCount) => request.onProgress?.(parsedFileCount, totalFileCount),
+  const { fileSymbols, skippedLargeFiles } = await request.parseFiles(
+    files,
+    (parsedFileCount) => request.onProgress?.(parsedFileCount, files.length),
     isCancelled,
   );
   const { graph, unresolvedTypeNames } = buildGraph(root, fileSymbols);
@@ -61,8 +67,8 @@ export async function scanFolder(request: ScanRequest): Promise<ScanResult> {
     pairedFolder: paired?.folder,
     depth: request.discovery.maxDepth,
     durationMs: Date.now() - startTime,
-    scannedFileCount: totalFileCount,
-    skippedLargeFiles: discovery.skippedLargeFiles,
+    scannedFileCount: fileSymbols.length,
+    skippedLargeFiles: skippedLargeFiles.sort(),
     filesWithParseErrors: fileSymbols.filter((symbols) => symbols.parseErrorCount > 0).map((symbols) => symbols.file).sort(),
     parseErrorCount: sum(fileSymbols.map((symbols) => symbols.parseErrorCount)),
     unresolvedTypeReferenceCount: sum(Array.from(unresolvedTypeNames.values())),
@@ -75,21 +81,20 @@ export async function scanFolder(request: ScanRequest): Promise<ScanResult> {
   return { graph, report };
 }
 
-/** Lists the files of every folder, with paths relative to `root` instead of to their own folder. */
-async function discoverFilesOfFolders(root: string, folders: string[], options: DiscoveryOptions): Promise<DiscoveryResult> {
-  const result: DiscoveryResult = { files: [], skippedLargeFiles: [] };
-  for (const folder of folders) {
-    const folderFromRoot = path.relative(root, folder).split(path.sep).join('/');
-    const fromRoot = (relativePath: string) => (folderFromRoot === '' ? relativePath : `${folderFromRoot}/${relativePath}`);
-    const discovery = await discoverFiles(folder, options);
-    for (const file of discovery.files) {
-      result.files.push({ absolutePath: file.absolutePath, relativePath: fromRoot(file.relativePath) });
-    }
-    result.skippedLargeFiles.push(...discovery.skippedLargeFiles.map(fromRoot));
-  }
-  result.files.sort((first, second) => first.relativePath.localeCompare(second.relativePath));
-  result.skippedLargeFiles.sort();
-  return result;
+/**
+ * Lists the files of every folder, with paths relative to `root` instead of to their own folder.
+ * The folders are listed at the same time: on a slow disk, their waits overlap.
+ */
+async function discoverFilesOfFolders(root: string, folders: string[], options: DiscoveryOptions): Promise<DiscoveredFile[]> {
+  const filesOfFolders = await Promise.all(
+    folders.map(async (folder) => {
+      const folderFromRoot = path.relative(root, folder).split(path.sep).join('/');
+      const fromRoot = (relativePath: string) => (folderFromRoot === '' ? relativePath : `${folderFromRoot}/${relativePath}`);
+      const files = await discoverFiles(folder, options);
+      return files.map((file) => ({ absolutePath: file.absolutePath, relativePath: fromRoot(file.relativePath) }));
+    }),
+  );
+  return filesOfFolders.flat().sort((first, second) => first.relativePath.localeCompare(second.relativePath));
 }
 
 function countEdgesByKind(graph: Graph): Record<RelationKind, number> {

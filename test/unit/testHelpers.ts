@@ -38,8 +38,13 @@ export const DEFAULT_DISCOVERY_OPTIONS: DiscoveryOptions = {
   maxDepth: -1,
   extensions: ['.cpp', '.hpp', '.h'],
   exclude: ['**/build/**', '**/out/**', '**/node_modules/**', '**/.git/**', '**/third_party/**', '**/external/**'],
-  maxFileSizeBytes: 2048 * 1024,
 };
+
+const DEFAULT_MAX_FILE_SIZE_BYTES = 2048 * 1024;
+
+interface TestScanOverrides extends Partial<DiscoveryOptions> {
+  maxFileSizeBytes?: number;
+}
 
 const TEST_WASM_PATHS: WasmPaths = {
   runtime: path.join(PROJECT_ROOT, 'node_modules', 'web-tree-sitter', 'web-tree-sitter.wasm'),
@@ -47,11 +52,12 @@ const TEST_WASM_PATHS: WasmPaths = {
 };
 
 /** Scans a folder in the current thread, with the default settings unless overridden. */
-export function scanTestFolder(folder: string, overrides: Partial<DiscoveryOptions> = {}): Promise<ScanResult> {
+export function scanTestFolder(folder: string, overrides: TestScanOverrides = {}): Promise<ScanResult> {
+  const { maxFileSizeBytes = DEFAULT_MAX_FILE_SIZE_BYTES, ...discoveryOverrides } = overrides;
   return scanFolder({
     folder,
-    discovery: { ...DEFAULT_DISCOVERY_OPTIONS, ...overrides },
-    parseFiles: createInProcessParseFunction(TEST_WASM_PATHS, []),
+    discovery: { ...DEFAULT_DISCOVERY_OPTIONS, ...discoveryOverrides },
+    parseFiles: createInProcessParseFunction(TEST_WASM_PATHS, { ignoredMacros: [], maxFileSizeBytes }),
   });
 }
 

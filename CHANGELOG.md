@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7
+
+- Faster scan on network drives and other slow disks, about 4 times on a project of 2000 files: the files are listed with one disk access per folder instead of one per file, and they are read in parallel by the parser workers.
+
 ## 0.1.6
 
 - Sharp text in the diagram: characters are drawn for their exact size on screen and placed on whole pixels, like text in the editor, instead of being scaled from a larger image. The text is redrawn each time the zoom stops, on any screen density, and in PNG exports.

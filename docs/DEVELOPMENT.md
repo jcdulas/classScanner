@@ -12,7 +12,7 @@ npm run typecheck          # TypeScript checks of the Node code, then of the web
 npm test                   # unit tests (vitest)
 npm run test:integration   # builds, then runs the extension in VS Code 1.130.0
 npm run generate:synthetic # creates test/synthetic-project (1500 classes)
-npm run benchmark          # scan and layout times on the synthetic project
+npm run benchmark          # scan and layout times on the synthetic project; add `-- --latency 10` to simulate a network drive
 npm run preview            # screenshot of the webview in a headless browser, in out/preview/
 npm run icon               # renders assets/icon.svg to assets/icon.png
 npm run package            # increments the patch version, then production build and .vsix

@@ -56,7 +56,7 @@ While a diagram is open, saving a C++ file of its folder, or of its paired folde
 - Depth `0`: only the files directly in the folder. Depth `N`: up to N levels of subfolders. `-1`: unlimited (default).
 - The depth is asked the first time a folder is scanned, prefilled with the last value used. A folder that has a saved arrangement is scanned again with its saved depth, which "Change Scan Depth" changes.
 - Exclusions are configurable globs. Default: `**/build/**`, `**/out/**`, `**/node_modules/**`, `**/.git/**`, `**/third_party/**`, `**/external/**`.
-- Files above a size limit (default 2 MB) are skipped and listed in the scan report.
+- Files above a size limit (default 2 MB) are skipped and listed in the scan report. The size is checked when the file is opened to be read.
 
 Paired header and source folders. Many projects keep their headers and their sources in two sibling folders with the same tree inside, `inc/core/engine.h` and `src/core/engine.cpp`. Scanning `src/core` alone would find method definitions without their classes, so the two halves are scanned together:
 
@@ -71,6 +71,9 @@ Paired header and source folders. Many projects keep their headers and their sou
 - `web-tree-sitter` (WASM) with the `tree-sitter-cpp` grammar, bundled in the extension: no native dependency, no build configuration.
 - Parsing is spread over a pool of `worker_threads` in the extension host, with progress and cancellation through `vscode.window.withProgress`.
 - `.h` files are parsed with the C++ grammar, even when they contain C.
+- The scan is written for slow file systems such as network drives, where each file system call waits for a round trip to the server:
+  - listing the files costs one call per folder and none per file, and several folders are listed at the same time;
+  - each parser worker reads its files with synchronous calls. Asynchronous calls of Node share one pool of 4 threads for the whole process; with synchronous calls every worker waits for its own file.
 
 ### 2.4 Known tree-sitter limits and workarounds
 
@@ -380,6 +383,7 @@ The measurements were made on the synthetic project of the test suite (`npm run 
 |---|---|---|
 | Complete scan | under 15 s | 0.9 to 1.7 s |
 | Computing a layout | under 5 s, without blocking the interface | grouped 1.4 s, global hierarchy 0.4 s, organic 1.6 s |
+| Complete scan on a slow disk | no target | simulated with `npm run benchmark -- --latency 10` (10 ms per file system call, 2000 files, 8 workers): 8.5 s, of which 0.2 s to list the files. It was 37 s, of which 21 s to list the files, when the size of each file was asked while listing and files were read with asynchronous calls |
 | Display after layout | under 1 s | not measured on its own: 1.6 to 1.9 s from the start of the scan to the diagram on screen, scan and layout included |
 | Pan and zoom | 60 frames/s | 57 to 60 frames/s at the three levels of detail, every relation type active; 60 frames/s with "Simplify cards" off |
 | Toggling a relation type | under 100 ms | with the whole diagram in view and orthogonal edges: about 20 ms to turn off, about 35 ms to turn on with a batch to redraw |

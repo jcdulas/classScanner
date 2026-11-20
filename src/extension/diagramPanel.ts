@@ -264,9 +264,11 @@ export class DiagramPanel {
         maxDepth: this.target.depth,
         extensions: settings.extensions,
         exclude: settings.exclude,
-        maxFileSizeBytes: settings.maxFileSizeKB * 1024,
       },
-      parseFiles: createWorkerParseFunction(workerScript, { ignoredMacros: settings.ignoredMacros }),
+      parseFiles: createWorkerParseFunction(workerScript, {
+        ignoredMacros: settings.ignoredMacros,
+        maxFileSizeBytes: settings.maxFileSizeKB * 1024,
+      }),
       isCancelled: () => token.isCancellationRequested,
       onProgress: (parsedFileCount, totalFileCount) => {
         const percent = Math.floor((parsedFileCount / Math.max(1, totalFileCount)) * 100);
