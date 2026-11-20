@@ -34,6 +34,8 @@ export class Camera {
   scale = 0.5;
   viewWidth = 1;
   viewHeight = 1;
+  /** Device pixels per screen pixel of the surface the diagram is drawn on. */
+  private pixelRatio = 1;
   private animation: CameraAnimation | undefined;
 
   constructor(private readonly world: Container) {}
@@ -53,6 +55,11 @@ export class Camera {
   setViewSize(width: number, height: number): void {
     this.viewWidth = Math.max(1, width);
     this.viewHeight = Math.max(1, height);
+    this.apply();
+  }
+
+  setPixelRatio(pixelRatio: number): void {
+    this.pixelRatio = pixelRatio;
     this.apply();
   }
 
@@ -131,7 +138,13 @@ export class Camera {
 
   private apply(): void {
     this.world.scale.set(this.scale);
-    this.world.position.set(this.viewWidth / 2 - this.centerX * this.scale, this.viewHeight / 2 - this.centerY * this.scale);
+    // The diagram moves by whole device pixels. Sharp text is placed on whole pixels of the
+    // world (pixelFonts.ts): moving the world by a fraction of a pixel would blur it again.
+    const toWholePixel = (screenCoordinate: number) => Math.round(screenCoordinate * this.pixelRatio) / this.pixelRatio;
+    this.world.position.set(
+      toWholePixel(this.viewWidth / 2 - this.centerX * this.scale),
+      toWholePixel(this.viewHeight / 2 - this.centerY * this.scale),
+    );
   }
 }
 

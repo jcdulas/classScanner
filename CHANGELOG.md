@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6
+
+- Sharp text in the diagram: characters are drawn for their exact size on screen and placed on whole pixels, like text in the editor, instead of being scaled from a larger image. The text is redrawn each time the zoom stops, on any screen density, and in PNG exports.
+
 ## 0.1.5
 
 - Paired header and source folders are scanned together: scanning a folder under `src` also scans the same path under a sibling `inc` or `include` folder, and the other way round. Classes get the methods defined in the other tree, and an `#include "util.h"` leads to the header of the mirror folder.

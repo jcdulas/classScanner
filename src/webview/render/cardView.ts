@@ -6,13 +6,17 @@
 // when the card becomes visible at a level that shows text, and destroyed as
 // soon as it leaves the screen: text objects only exist for the few dozen
 // cards on screen, never for the whole diagram.
+//
+// Texts take their font from PixelFonts and are placed on whole pixels, which
+// keeps them sharp (see pixelFonts.ts).
 
 import { BitmapText, Container, Graphics } from 'pixi.js';
 import { Visibility } from '../../shared/graphModel';
 import { CARD_STYLE, CardLayout, CardRow, FontMetrics } from '../model/cardGeometry';
-import { CARD_FONTS } from './fonts';
+import { CARD_FONTS, CardFontStyle } from './fonts';
 import { darken, lighten, verticalGradient } from './glassStyle';
 import { CardContent } from './levelOfDetail';
+import { PixelFonts } from './pixelFonts';
 import { Theme, contrastingTextColor } from './theme';
 
 const DIMMED_ALPHA = 0.25;
@@ -33,6 +37,7 @@ export class CardView {
     private theme: Theme,
     private readonly metrics: FontMetrics,
     private readonly isAbstract: boolean,
+    private readonly fonts: PixelFonts,
   ) {
     this.container.addChild(this.background);
     this.drawBackground();
@@ -87,6 +92,15 @@ export class CardView {
     }
     if (isSolid(kind) !== wasSolid) {
       this.drawBackground();
+    }
+  }
+
+  /** Creates the texts again, with the fonts of the current zoom. */
+  refreshFonts(): void {
+    if (this.content !== null) {
+      this.content.destroy({ children: true });
+      this.content = this.buildContent(this.contentKind);
+      this.container.addChild(this.content);
     }
   }
 
@@ -201,7 +215,9 @@ export class CardView {
     const charWidthPerPixel = this.metrics.charWidth / CARD_STYLE.memberFontSize;
     const availableWidth = width - CARD_STYLE.paddingX * 2;
     const fontSize = Math.max(12, Math.min(96, availableWidth / (title.length * charWidthPerPixel), height * 0.45));
-    const text = this.createText(title, CARD_FONTS.bold, fontSize, contrastingTextColor(this.headerColor));
+    // The size differs for every card: a pixel font per card would be needed, so the scalable font is used.
+    const text = new BitmapText({ text: title, style: { fontFamily: CARD_FONTS.bold, fontSize } });
+    text.tint = contrastingTextColor(this.headerColor);
     text.x = Math.max(CARD_STYLE.paddingX, (width - title.length * charWidthPerPixel * fontSize) / 2);
     text.y = (height - fontSize) / 2;
     content.addChild(text);
@@ -211,16 +227,14 @@ export class CardView {
     const textColor = contrastingTextColor(this.headerColor);
     const { badge, title } = this.layout;
     if (badge !== '') {
-      const badgeText = this.createText(badge, CARD_FONTS.regular, CARD_STYLE.badgeFontSize, textColor);
+      const badgeText = this.createText(badge, 'regular', CARD_STYLE.badgeFontSize, textColor, CARD_STYLE.paddingX, 5);
       badgeText.alpha = 0.8;
-      badgeText.position.set(CARD_STYLE.paddingX, 5);
       content.addChild(badgeText);
     }
     // UML shows abstract classes in italics.
-    const font = this.isAbstract ? CARD_FONTS.italic : CARD_FONTS.bold;
-    const titleText = this.createText(title, font, CARD_STYLE.titleFontSize, textColor);
-    titleText.position.set(CARD_STYLE.paddingX, badge === '' ? (CARD_STYLE.headerHeight - CARD_STYLE.titleFontSize) / 2 : 19);
-    content.addChild(titleText);
+    const fontStyle = this.isAbstract ? 'italic' : 'bold';
+    const titleY = badge === '' ? (CARD_STYLE.headerHeight - CARD_STYLE.titleFontSize) / 2 : 19;
+    content.addChild(this.createText(title, fontStyle, CARD_STYLE.titleFontSize, textColor, CARD_STYLE.paddingX, titleY));
   }
 
   private addRows(content: Container): void {
@@ -234,10 +248,9 @@ export class CardView {
     const textOffsetY = (CARD_STYLE.rowHeight - CARD_STYLE.memberFontSize) / 2;
     for (const row of this.layout.rows) {
       const isMuted = row.kind === 'more' || row.kind === 'specialization';
-      const font = row.isItalic ? CARD_FONTS.italic : CARD_FONTS.regular;
-      const text = this.createText(row.text, font, CARD_STYLE.memberFontSize, isMuted ? this.theme.mutedText : this.theme.text);
-      text.position.set(textX, row.y + textOffsetY);
-      content.addChild(text);
+      const fontStyle = row.isItalic ? 'italic' : 'regular';
+      const color = isMuted ? this.theme.mutedText : this.theme.text;
+      content.addChild(this.createText(row.text, fontStyle, CARD_STYLE.memberFontSize, color, textX, row.y + textOffsetY));
       const iconCenterY = row.y + CARD_STYLE.rowHeight / 2;
       if (row.visibility !== undefined) {
         this.drawMemberIcon(icons, row.kind === 'method', row.visibility, CARD_STYLE.paddingX + 4, iconCenterY);
@@ -265,9 +278,12 @@ export class CardView {
     }
   }
 
-  private createText(text: string, fontName: string, fontSize: number, color: number): BitmapText {
-    const bitmapText = new BitmapText({ text, style: { fontFamily: fontName, fontSize } });
+  /** A text at (x, y) in the card, moved to the nearest whole pixel of the screen. */
+  private createText(text: string, fontStyle: CardFontStyle, fontSize: number, color: number, x: number, y: number): BitmapText {
+    const fontFamily = this.fonts.fontFor(fontStyle, fontSize, text);
+    const bitmapText = new BitmapText({ text, style: { fontFamily, fontSize } });
     bitmapText.tint = color;
+    bitmapText.position.set(this.fonts.snap(x), this.fonts.snap(y));
     return bitmapText;
   }
 }

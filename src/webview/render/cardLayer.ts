@@ -11,6 +11,7 @@ import { FontMetrics } from '../model/cardGeometry';
 import { DiagramStore } from '../state/diagramStore';
 import { CardView } from './cardView';
 import { CardContent, cardContentFor } from './levelOfDetail';
+import { PixelFonts } from './pixelFonts';
 import { Theme, groupColor } from './theme';
 
 export class CardLayer {
@@ -20,7 +21,10 @@ export class CardLayer {
   /** When set, every shown card is drawn with full detail, ignoring culling (used by the PNG export). */
   private isExportMode = false;
 
-  constructor(private readonly metrics: FontMetrics) {}
+  constructor(
+    private readonly metrics: FontMetrics,
+    private readonly fonts: PixelFonts,
+  ) {}
 
   view(id: string): CardView | undefined {
     return this.views.get(id);
@@ -35,7 +39,7 @@ export class CardLayer {
     this.renderableIds = new Set();
     for (const node of store.graph?.nodes ?? []) {
       const layout = store.cardLayouts.get(node.id)!;
-      const view = new CardView(node.id, layout, this.headerColorOf(store, theme, node.id), theme, this.metrics, node.isAbstract);
+      const view = new CardView(node.id, layout, this.headerColorOf(store, theme, node.id), theme, this.metrics, node.isAbstract, this.fonts);
       view.container.visible = false;
       view.container.renderable = false;
       this.views.set(node.id, view);
@@ -55,13 +59,24 @@ export class CardLayer {
     }
   }
 
-  /** `overrides` replaces some positions, for the animation between two layouts. */
+  /**
+   * `overrides` replaces some positions, for the animation between two layouts. Cards are
+   * placed on whole pixels of the screen, like their texts, to keep the text sharp.
+   */
   syncPositions(positions: Map<string, Point>, overrides?: Map<string, Point>): void {
     for (const [id, view] of this.views) {
       const position = overrides?.get(id) ?? positions.get(id);
       if (position !== undefined) {
-        view.container.position.set(position.x, position.y);
+        view.container.position.set(this.fonts.snap(position.x), this.fonts.snap(position.y));
       }
+    }
+  }
+
+  /** Places the cards and creates their texts again, after the zoom that fonts are made for changed. */
+  refreshFonts(positions: Map<string, Point>): void {
+    this.syncPositions(positions);
+    for (const view of this.views.values()) {
+      view.refreshFonts();
     }
   }
 

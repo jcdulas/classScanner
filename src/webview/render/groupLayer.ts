@@ -3,20 +3,26 @@
 // Group titles keep a constant size on screen, so that the names of the
 // groups stay readable when the whole diagram is seen from far away
 // (spec §4.3, overview level). A title is never wider than its group box.
+//
+// As a title has a constant size on screen, it uses a font drawn for that
+// size and is placed on whole pixels, which keeps it sharp (see pixelFonts.ts).
 
 import { BitmapText, Container, Graphics } from 'pixi.js';
 import { CARD_STYLE, FontMetrics } from '../model/cardGeometry';
 import { GroupBox } from '../model/sceneGeometry';
 import { CARD_FONTS } from './fonts';
 import { darken, lighten, verticalGradient } from './glassStyle';
+import { PixelFonts } from './pixelFonts';
 import { Theme, contrastingTextColor, groupColor } from './theme';
 
 const GROUP_RADIUS = 24;
 const TITLE_FONT_SIZE = 15;
 const TITLE_SCREEN_PIXELS = 15;
+const COUNT_FONT_SIZE = 13;
 
 interface GroupTitle {
   container: Container;
+  text: BitmapText;
   box: GroupBox;
   textWidth: number;
 }
@@ -32,7 +38,10 @@ export class GroupLayer {
   private readonly collapsedGraphics = new Graphics();
   private titles: GroupTitle[] = [];
 
-  constructor(private readonly metrics: FontMetrics) {
+  constructor(
+    private readonly metrics: FontMetrics,
+    private readonly fonts: PixelFonts,
+  ) {
     this.boxContainer.addChild(this.boxGraphics);
     this.collapsedContainer.addChild(this.collapsedGraphics);
   }
@@ -63,13 +72,21 @@ export class GroupLayer {
 
   /** Keeps the titles at a constant size on screen. Called when the zoom changes. */
   updateTitleScale(cameraScale: number): void {
+    const pixelsPerUnit = cameraScale * this.fonts.pixelRatio;
+    const toWholePixel = (worldCoordinate: number) => Math.round(worldCoordinate * pixelsPerUnit) / pixelsPerUnit;
     for (const title of this.titles) {
       const rect = title.box.isCollapsed ? title.box.collapsedRect : title.box.rect;
       const wantedScale = TITLE_SCREEN_PIXELS / TITLE_FONT_SIZE / cameraScale;
       const maxScale = (rect.width - 48) / Math.max(1, title.textWidth);
       const scale = Math.max(0.01, Math.min(wantedScale, maxScale));
       title.container.scale.set(scale);
-      title.container.position.set(rect.x + 16, rect.y + 10);
+      title.container.position.set(toWholePixel(rect.x + 16), toWholePixel(rect.y + 10));
+      // A title shrunk to fit in its box has no fixed size on screen: it uses the scalable font.
+      const hasWantedSize = scale === wantedScale;
+      const fontFamily = hasWantedSize ? this.fonts.fontForScreenSize('bold', TITLE_SCREEN_PIXELS, title.box.label) : CARD_FONTS.bold;
+      if (title.text.style.fontFamily !== fontFamily) {
+        title.text.style.fontFamily = fontFamily;
+      }
     }
   }
 
@@ -85,12 +102,13 @@ export class GroupLayer {
       .roundRect(x + 1, y + 1, width - 2, height - 2, radius - 1)
       .stroke({ width: 1, color: 0xffffff, alpha: theme.isDark ? 0.16 : 0.55 });
     this.collapsedGraphics.roundRect(x, y, width, height, radius).stroke({ width: 1, color: theme.cardBorder });
+    const count = `${box.memberIds.length} classes`;
     const countText = new BitmapText({
-      text: `${box.memberIds.length} classes`,
-      style: { fontFamily: CARD_FONTS.regular, fontSize: 13 },
+      text: count,
+      style: { fontFamily: this.fonts.fontFor('regular', COUNT_FONT_SIZE, count), fontSize: COUNT_FONT_SIZE },
     });
     countText.tint = contrastingTextColor(color);
-    countText.position.set(x + 10, y + height - 22);
+    countText.position.set(this.fonts.snap(x + 10), this.fonts.snap(y + height - 22));
     this.collapsedContainer.addChild(countText);
   }
 
@@ -106,6 +124,6 @@ export class GroupLayer {
       .stroke({ width: 1, color: groupColor(theme, box.key), alpha: 0.5 });
     container.addChild(background, text);
     this.titleContainer.addChild(container);
-    this.titles.push({ container, box, textWidth });
+    this.titles.push({ container, text, box, textWidth });
   }
 }

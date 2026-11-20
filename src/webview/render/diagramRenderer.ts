@@ -30,9 +30,11 @@ import { ChangeTopic, DiagramStore, LevelOfDetail, StoreChange } from '../state/
 import { Camera, ViewInsets } from './camera';
 import { CardLayer } from './cardLayer';
 import { EdgeLayer } from './edgeLayer';
+import { editorFontFamily } from './fonts';
 import { GroupLayer } from './groupLayer';
 import { CardContent, TEXT_MIN_SCALE, cardContentFor, levelOfDetailForScale, unsimplifiedCardContentFor } from './levelOfDetail';
 import { Minimap } from './minimap';
+import { PixelFonts } from './pixelFonts';
 import { delay, measurePanningPerformance, measureRelationToggle } from './performanceProbe';
 import { PointerInteraction } from './pointerInteraction';
 import { HitTarget, IndexedItem, SpatialIndex } from './spatialIndex';
@@ -48,7 +50,7 @@ type DirtyTopic = ChangeTopic | 'theme';
 
 /** Edges are rebuilt when the zoom changed by more than this factor since they were built. */
 const EDGE_REBUILD_ZOOM_FACTOR = 1.3;
-/** Delay after the last camera move before the edges are rebuilt for the new view. */
+/** Delay after the last camera move before the text and the edges are redrawn for the new view. */
 const CAMERA_SETTLE_MS = 150;
 const LAYOUT_ANIMATION_MS = 450;
 
@@ -67,6 +69,7 @@ export class DiagramRenderer {
   private readonly selectionRectangle = new Graphics();
   private readonly spatialIndex = new SpatialIndex();
   private readonly minimap: Minimap;
+  private readonly fonts = new PixelFonts(editorFontFamily());
   private readonly tooltip = document.createElement('div');
   private theme: Theme;
   private groupBoxes = new Map<string, GroupBox>();
@@ -93,8 +96,9 @@ export class DiagramRenderer {
   ) {
     this.theme = readTheme();
     this.camera = new Camera(this.world);
-    this.cardLayer = new CardLayer(metrics);
-    this.groupLayer = new GroupLayer(metrics);
+    this.camera.setPixelRatio(app.renderer.resolution);
+    this.cardLayer = new CardLayer(metrics, this.fonts);
+    this.groupLayer = new GroupLayer(metrics, this.fonts);
     this.world.addChild(
       this.groupLayer.boxContainer,
       this.edgeLayer.container,
@@ -280,7 +284,7 @@ export class DiagramRenderer {
       this.isCameraDirty = false;
       this.onCameraChanged();
     }
-    this.rebuildEdgesWhenCameraSettles(now);
+    this.redrawWhenCameraSettles(now);
   }
 
   private processDirtyTopics(): void {
@@ -380,10 +384,27 @@ export class DiagramRenderer {
   }
 
   /**
-   * Edges are built for an area larger than the view, at the current zoom. They are rebuilt
-   * once the camera stops moving, if it zoomed a lot or left that area.
+   * Draws the text for a zoom and a pixel density (device pixels per screen pixel): texts get
+   * fonts made for their exact size and are placed on whole pixels (see pixelFonts.ts).
    */
-  private rebuildEdgesWhenCameraSettles(now: number): void {
+  private drawTextFor(cameraScale: number, pixelRatio: number): void {
+    this.camera.setPixelRatio(pixelRatio);
+    if (!this.fonts.setTarget(cameraScale, pixelRatio)) {
+      return;
+    }
+    this.cardLayer.refreshFonts(this.store.positions);
+    this.groupLayer.sync(this.groupBoxes, this.theme);
+    this.groupLayer.updateTitleScale(cameraScale);
+    // Every text was created again: nothing uses the fonts of the previous zoom any more.
+    this.fonts.releaseUnusedFonts();
+  }
+
+  /**
+   * Once the camera stops moving, the text is redrawn sharp for the new zoom. The edges, which
+   * are built for an area larger than the view at one zoom, are rebuilt if the camera zoomed a
+   * lot or left that area.
+   */
+  private redrawWhenCameraSettles(now: number): void {
     if (now - this.lastCameraMoveTime < CAMERA_SETTLE_MS || this.hasSavedCameraSinceMove) {
       return;
     }
@@ -392,6 +413,7 @@ export class DiagramRenderer {
     if (this.hasPlacedCamera) {
       this.store.setCamera(this.camera.state);
     }
+    this.drawTextFor(this.camera.scale, this.app.renderer.resolution);
     const zoomRatio = this.camera.scale / this.edgeBuildScale;
     const view = this.camera.visibleWorldRect();
     const isOutsideBuiltArea = this.edgeCullRect === undefined || !containsRect(this.edgeCullRect, view);
@@ -621,7 +643,9 @@ export class DiagramRenderer {
   private resize(): void {
     const width = Math.max(1, this.host.clientWidth);
     const height = Math.max(1, this.host.clientHeight);
-    this.app.renderer.resize(width, height);
+    // The pixel density is read again: it changes with the zoom level of VS Code. The text is
+    // then redrawn for it when the camera settles.
+    this.app.renderer.resize(width, height, window.devicePixelRatio || 1);
     this.camera.setViewSize(width, height);
     this.markCameraMoved();
   }
@@ -661,12 +685,18 @@ export class DiagramRenderer {
 
   private renderViewToCanvas(scale: number): HTMLCanvasElement {
     const frame = new Rectangle(0, 0, this.camera.viewWidth, this.camera.viewHeight);
-    return this.app.renderer.extract.canvas({
-      target: this.app.stage,
-      frame,
-      resolution: scale,
-      clearColor: this.theme.background,
-    }) as HTMLCanvasElement;
+    // The image has `scale` pixels per screen pixel: the text is drawn sharp for that density.
+    this.drawTextFor(this.camera.scale, scale);
+    try {
+      return this.app.renderer.extract.canvas({
+        target: this.app.stage,
+        frame,
+        resolution: scale,
+        clearColor: this.theme.background,
+      }) as HTMLCanvasElement;
+    } finally {
+      this.drawTextFor(this.camera.scale, this.app.renderer.resolution);
+    }
   }
 
   /**
@@ -674,16 +704,23 @@ export class DiagramRenderer {
    * GPU texture, so it is rendered in tiles that are assembled in a 2D canvas.
    */
   private renderDiagramToCanvas(requestedScale: number): HTMLCanvasElement {
-    const bounds = expandRect(this.shownBounds() ?? { x: 0, y: 0, width: 1, height: 1 }, 40);
+    const shownBounds = expandRect(this.shownBounds() ?? { x: 0, y: 0, width: 1, height: 1 }, 40);
     // Browsers limit canvases to about 16384 pixels per side and 268 million pixels in total.
     const maxSide = 16384;
     const maxArea = 200_000_000;
     const scale = Math.min(
       requestedScale,
-      maxSide / bounds.width,
-      maxSide / bounds.height,
-      Math.sqrt(maxArea / (bounds.width * bounds.height)),
+      maxSide / shownBounds.width,
+      maxSide / shownBounds.height,
+      Math.sqrt(maxArea / (shownBounds.width * shownBounds.height)),
     );
+    // The image starts on a whole pixel of the world at this scale: text, which is placed on
+    // whole pixels, then falls on the pixels of the image.
+    const bounds = {
+      ...shownBounds,
+      x: Math.floor(shownBounds.x * scale) / scale,
+      y: Math.floor(shownBounds.y * scale) / scale,
+    };
     const output = document.createElement('canvas');
     output.width = Math.ceil(bounds.width * scale);
     output.height = Math.ceil(bounds.height * scale);
@@ -692,6 +729,8 @@ export class DiagramRenderer {
     const savedCamera = this.camera.state;
     const savedLevel = this.level;
     this.level = 'full';
+    // The world is drawn at a zoom of 1, with `scale` pixels per world unit.
+    this.drawTextFor(1, scale);
     this.cardLayer.enterExportMode(this.store);
     this.edgeLayer.setLabelsReadable(true);
     this.groupLayer.updateTitleScale(1);
@@ -726,6 +765,7 @@ export class DiagramRenderer {
       this.edgeLayer.setLabelsReadable(savedLevel === 'full');
       this.level = savedLevel;
       this.camera.setState(savedCamera);
+      this.drawTextFor(savedCamera.scale, this.app.renderer.resolution);
       this.dirty.add('positions');
       this.markCameraMoved();
     }

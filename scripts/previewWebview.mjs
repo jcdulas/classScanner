@@ -4,10 +4,11 @@
 // Usage: node scripts/previewWebview.mjs [--theme dark|light]
 //        [--scenario default|selection|zoom|menu|menuAt|zoomAt|click|doubleClick|drag|multiDrag|ctrlClickTwice|schemaPanel|search|toggleRow]
 //        [--x 0.5 --y 0.5] [--undo 1] [--text area] [--alt 1] [--count 2]
-//        [--folder test/fixtures/project] [--relations all|inherit,compose] [--size 1500x950]
+//        [--folder test/fixtures/project] [--relations all|inherit,compose] [--size 1500x950] [--pixel-ratio 2]
 //        [--output out/preview/preview.png] [--state '{"simplifyCardsWhenZoomedOut":false}']
 //
 // --state gives fields of the saved arrangement (src/shared/savedState.ts) as JSON.
+// --pixel-ratio simulates a screen with that many device pixels per CSS pixel, to check that text is sharp on it.
 //
 // The page is test/preview/harness.html: it stands in for VS Code (theme variables and
 // acquireVsCodeApi) and can play a scenario of mouse actions before the screenshot.
@@ -35,6 +36,7 @@ const scenario = option('scenario', 'default');
 const folder = path.resolve(projectRoot, option('folder', 'test/fixtures/project'));
 const relations = option('relations', 'inherit,compose,aggregate');
 const [width, height] = option('size', '1500x950').split('x');
+const pixelRatio = option('pixel-ratio', '1');
 const output = path.resolve(projectRoot, option('output', `out/preview/${scenario}-${theme}.png`));
 
 const BROWSER_PATHS = [
@@ -105,6 +107,7 @@ async function takeScreenshot(url) {
     '--hide-scrollbars',
     '--enable-unsafe-swiftshader',
     `--window-size=${width},${height}`,
+    `--force-device-scale-factor=${pixelRatio}`,
     `--remote-debugging-port=${debuggingPort}`,
     `--user-data-dir=${path.join(previewFolder, 'browser-profile')}`,
     url,

@@ -136,7 +136,14 @@ Rules:
 ### 4.1 Rendering
 
 - PixiJS v8 (WebGL2) in a VS Code webview.
-- Text uses PixiJS bitmap fonts generated at startup from the editor font, at 32 px so that text stays sharp when zooming in. (MSDF fonts were considered; they need a font file prepared at build time, which rules out using the user's editor font.)
+- Text uses PixiJS bitmap fonts made from the editor font. (MSDF fonts were considered; they need a font file prepared at build time, which rules out using the user's editor font.)
+- Readable text is as sharp as text drawn by the editor, because its characters fall exactly on the pixels of the screen:
+  - when the zoom stops, a font is drawn for the exact size, in device pixels, of each text size in use, and the texts are created again with it;
+  - cards, texts and the diagram itself are placed on whole device pixels;
+  - while the zoom is changing, texts keep the font of the previous zoom, scaled, and are sharp again 150 ms after it stops;
+  - group titles, which keep one size on screen, are always sharp.
+- Fonts drawn once at 32 px and scaled are used where an exact font is not worth it or not possible: below a zoom of 0.5, where text is under 6 pixels tall, for the big class names of the compact level, whose size differs for every card, for the «friend» labels of relations, and for texts with characters outside of printable ASCII.
+- PNG exports draw the text for the pixels of the image in the same way.
 - Viewport culling backed by a spatial index (Flatbush); text objects exist only for the cards on screen at a level of detail that displays text, and are destroyed when the card leaves the screen.
 - Edges are drawn in batches, one batch per relation type. Turning a type off hides its batch; turning it on shows the batch, redrawing it only if the view changed in the meantime.
 - Edges are built for an area larger than the view and rebuilt when the camera stops after leaving that area or zooming by more than 30%.

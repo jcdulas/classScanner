@@ -3,14 +3,21 @@
 // Drawing text in WebGL is costly if every label is its own texture. PixiJS
 // "bitmap fonts" draw each character once into a shared texture (an atlas)
 // and then build every label from rectangles of that texture, so thousands of
-// labels cost almost nothing. The characters are drawn large (FONT_TEXTURE_SIZE)
-// so that text stays sharp when zooming in. They are drawn in white and colored
+// labels cost almost nothing. The characters are drawn in white and colored
 // per label with `tint`.
+//
+// The fonts installed here are drawn once, large (FONT_TEXTURE_SIZE), and scaled
+// to the size of each text. They work at every zoom but scaling blurs them a
+// little, so readable text uses the fonts of pixelFonts.ts instead, which are
+// drawn for the exact size of the text on screen.
 
 import { BitmapFont } from 'pixi.js';
 import { CARD_STYLE, FontMetrics } from '../model/cardGeometry';
 
-export const CARD_FONTS = {
+export type CardFontStyle = 'regular' | 'bold' | 'italic';
+
+/** Names of the scalable fonts. */
+export const CARD_FONTS: Record<CardFontStyle, string> = {
   regular: 'card-regular',
   bold: 'card-bold',
   italic: 'card-italic',
@@ -25,7 +32,7 @@ export function editorFontFamily(): string {
   return family === '' ? FALLBACK_FONT_FAMILY : `${family}, monospace`;
 }
 
-/** Installs the bitmap fonts and returns the measured width of one character. */
+/** Installs the scalable bitmap fonts and returns the measured width of one character. */
 export function installCardFonts(fontFamily: string): FontMetrics {
   // Printable ASCII plus the characters used in card decorations. Others are added on demand.
   const characters = [[' ', '~'], '«»…'];
