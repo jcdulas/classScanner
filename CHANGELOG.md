@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.11
+
+- The extension icon now shows an aligned class hierarchy in sage, lime and cream with forest-green outlines.
+
 ## 0.1.10
 
 - Git changes and editor navigation use the source ranges of classes and their method definitions. Edits to a free function after a class no longer mark that class as changed.

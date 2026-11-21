@@ -1,33 +1,44 @@
-<!--
-  Icon of the extension: a class card above two derived classes, linked by the UML
-  inheritance arrow. It is drawn in the flat style of VS Code: plain colors, thick
-  even strokes, no gradient and no shadow, on the VS Code blue (#007acc).
-  The PNG used by VS Code is rendered from this file with `npm run icon`.
--->
+<!-- The class hierarchy used as the extension icon. Render with npm run icon. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <!-- Background: a rounded square, with a darker facet in the bottom right corner. -->
-  <rect x="8" y="8" width="240" height="240" rx="36" fill="#007acc"/>
-  <path d="M248 96V212a36 36 0 0 1-36 36H96Z" fill="#0065a9"/>
+  <defs>
+    <linearGradient id="sage" x2=".9" y2="1">
+      <stop stop-color="#b1cc92"/>
+      <stop offset="1" stop-color="#86af78"/>
+    </linearGradient>
+    <linearGradient id="lime" x2="1" y2=".65">
+      <stop stop-color="#d6df27"/>
+      <stop offset="1" stop-color="#b6c912"/>
+    </linearGradient>
+    <linearGradient id="cream" x2=".8" y2="1">
+      <stop stop-color="#fff0d7"/>
+      <stop offset="1" stop-color="#f5e2c3"/>
+    </linearGradient>
 
-  <!-- Inheritance links: from the two derived classes up to a hollow triangle under the base class. -->
-  <g fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M76 184V164H180V184"/>
-    <path d="M128 164V152"/>
-    <path d="M128 128L145 152H111Z"/>
+    <path id="branches" d="M58 184v-10a12 12 0 0 1 12-12h116a12 12 0 0 1 12 12v10 M128 162v-20"/>
+    <g id="derived-card">
+      <rect width="84" height="52" rx="12" fill="url(#cream)" stroke="none"/>
+      <path d="M0 20v-8A12 12 0 0 1 12 0h60a12 12 0 0 1 12 12v8Z" stroke="none"/>
+      <path d="M0 20h84" stroke-width="6"/>
+      <rect width="84" height="52" rx="12" fill="none"/>
+    </g>
+  </defs>
+
+  <g stroke="#053d26" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <!-- The cream centre keeps the connectors visible on dark backgrounds. -->
+    <use href="#branches" fill="none" stroke-width="12"/>
+    <use href="#branches" fill="none" stroke="#f8e8ce" stroke-width="4"/>
+    <path d="M128 114l17 28h-34Z" fill="url(#cream)"/>
+
+    <rect x="54" y="20" width="148" height="94" rx="16" fill="url(#cream)" stroke="none"/>
+    <path d="M54 54V36a16 16 0 0 1 16-16h116a16 16 0 0 1 16 16v18Z" fill="url(#sage)" stroke="none"/>
+    <path d="M54 54h148" stroke-width="6"/>
+    <rect x="54" y="20" width="148" height="94" rx="16" fill="none"/>
+
+    <path d="M76 37h40 M104 75h68 M104 95h44" fill="none"/>
+    <path d="M82 68l7 7-7 7-7-7Z" fill="#053d26" stroke="none"/>
+    <circle cx="82" cy="95" r="5.5" fill="#053d26" stroke="none"/>
+
+    <use href="#derived-card" x="16" y="184" fill="url(#sage)"/>
+    <use href="#derived-card" x="156" y="184" fill="url(#lime)"/>
   </g>
-
-  <!-- Base class card: a header with the class name, then a method (diamond) and an attribute (circle). -->
-  <rect x="56" y="40" width="144" height="84" rx="8" fill="#005a9e" stroke="#ffffff" stroke-width="10" stroke-linejoin="round"/>
-  <rect x="56" y="40" width="144" height="30" fill="#ffffff"/>
-  <rect x="70" y="50" width="56" height="10" rx="2" fill="#007acc"/>
-  <path d="M76 81l7 7-7 7-7-7Z" fill="#ffffff"/>
-  <rect x="92" y="83" width="84" height="10" rx="2" fill="#ffffff"/>
-  <circle cx="76" cy="107" r="6" fill="#ffffff"/>
-  <rect x="92" y="102" width="58" height="10" rx="2" fill="#ffffff"/>
-
-  <!-- Derived class cards. -->
-  <rect x="40" y="186" width="72" height="40" rx="8" fill="#005a9e" stroke="#ffffff" stroke-width="10" stroke-linejoin="round"/>
-  <rect x="40" y="186" width="72" height="16" fill="#ffffff"/>
-  <rect x="144" y="186" width="72" height="40" rx="8" fill="#005a9e" stroke="#ffffff" stroke-width="10" stroke-linejoin="round"/>
-  <rect x="144" y="186" width="72" height="16" fill="#ffffff"/>
 </svg>
