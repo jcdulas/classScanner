@@ -1,11 +1,12 @@
-// Tests of the webview model: card geometry, overlaps, placement, visibility and edge geometry.
+// Tests of the webview model: card geometry, overlaps, placement, visibility, edge geometry and the edge under the pointer.
 
 import { describe, expect, it } from 'vitest';
 import { ClassNode, Edge, Graph, MemberFlags } from '../../src/shared/graphModel';
 import { createDefaultState } from '../../src/shared/savedState';
 import { CARD_STYLE, computeCardLayout } from '../../src/webview/model/cardGeometry';
 import { clipSegmentToRect, dashSegments, edgeSegment } from '../../src/webview/model/edgeGeometry';
-import { routeEdges } from '../../src/webview/model/edgeRouting';
+import { nearestRouteWithin } from '../../src/webview/model/edgeHitTest';
+import { RoutedEdge, routeEdges } from '../../src/webview/model/edgeRouting';
 import { pushOverlappingCards } from '../../src/webview/model/overlap';
 import { placeNewItems } from '../../src/webview/model/placement';
 import { computeVisibleNodeIds, findNeighborhood } from '../../src/webview/model/visibility';
@@ -166,9 +167,9 @@ describe('visibility and isolation', () => {
       makeNode('Fwd', { isExternal: true }),
     ],
     edges: [
-      { from: 'app::B', to: 'app::A', kind: 'inherit' },
-      { from: 'lib::C', to: 'app::B', kind: 'compose' },
-      { from: 'lib::D', to: 'lib::C', kind: 'depend' },
+      { from: 'app::B', to: 'app::A', kind: 'inherit', file: 0, line: 1 },
+      { from: 'lib::C', to: 'app::B', kind: 'compose', file: 1, line: 1 },
+      { from: 'lib::D', to: 'lib::C', kind: 'depend', file: 1, line: 1 },
     ] satisfies Edge[],
   };
   const filters = createDefaultState().filters;
@@ -273,5 +274,30 @@ describe('edge geometry', () => {
   it('splits a segment into dashes, with a cap on their number', () => {
     expect(dashSegments({ start: { x: 0, y: 0 }, end: { x: 100, y: 0 } }, 6, 4)).toHaveLength(10);
     expect(dashSegments({ start: { x: 0, y: 0 }, end: { x: 1_000_000, y: 0 } }, 6, 4).length).toBeLessThanOrEqual(401);
+  });
+});
+
+describe('edge under the pointer', () => {
+  const makeRoute = (from: string, points: { x: number; y: number }[]): RoutedEdge => ({
+    edge: { from, to: 'Target', kind: 'inherit', file: 0, line: 1 },
+    points,
+  });
+  // An elbow going right then down, and a horizontal line 10 units under its first segment.
+  const elbow = makeRoute('Elbow', [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }]);
+  const line = makeRoute('Line', [{ x: 0, y: 10 }, { x: 100, y: 10 }]);
+
+  it('finds the edge within the tolerance of the point, on any of its segments', () => {
+    expect(nearestRouteWithin([elbow], { x: 50, y: 3 }, 5)?.route).toBe(elbow);
+    expect(nearestRouteWithin([elbow], { x: 97, y: 60 }, 5)?.route).toBe(elbow);
+    expect(nearestRouteWithin([elbow], { x: 50, y: 50 }, 5)).toBeUndefined();
+  });
+
+  it('does not extend an edge beyond its ends', () => {
+    expect(nearestRouteWithin([line], { x: 120, y: 10 }, 5)).toBeUndefined();
+  });
+
+  it('returns the closest of two edges', () => {
+    expect(nearestRouteWithin([elbow, line], { x: 50, y: 4 }, 8)?.route).toBe(elbow);
+    expect(nearestRouteWithin([elbow, line], { x: 50, y: 7 }, 8)?.route).toBe(line);
   });
 });

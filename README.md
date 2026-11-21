@@ -58,6 +58,7 @@ Select classes and take them elsewhere:
 | Drag a card or a group title | Move it; dragging a selected card moves the whole selection |
 | Alt + click a member line | Open the member's declaration |
 | Alt + click a card, elsewhere | Open the class declaration |
+| Click an arrow | Open the line that declares the relation: the base class, the attribute, the method or the code that uses the other class, the `#include`, the `friend` declaration |
 | Double-click a card | Cycle its display mode: auto, full, compact |
 | Double-click a group title | Collapse or expand the group |
 | Right-click | Display modes, isolate, open the header or the source file, go to the member under the pointer, exports, collapse the group |
@@ -74,7 +75,9 @@ The controls float above the diagram:
 - **Bottom**: the status, the scan depth and the scan report on the left, zoom controls and the minimap on the right.
 - **Selection bar**: appears while classes are selected, with the actions that apply to them. For a single class it has one button per file, such as `engine.h` and `engine.cpp`: choose which one to open.
 
-A file opens in the column on the right of the diagram, and only once: opening it again shows the editor it already has.
+Files always open in the same editor column: the one next to the diagram, on its right if there is one, otherwise on its left, and a new column only when the diagram is alone. A file opens only once there: opening it again shows the editor it already has.
+
+The arrow under the pointer is highlighted, and a tooltip names its relation and the line that a click opens.
 
 Two switches of the side panel, under **Zoomed out**, set what happens when you zoom out:
 

@@ -35,6 +35,20 @@ export interface BaseClass {
   type: TypeExpression;
   access: Visibility;
   isVirtual: boolean;
+  line: number;
+}
+
+/** A type name used in the body of a method, with the first line that uses it. */
+export interface BodyTypeReference {
+  name: string;
+  line: number;
+}
+
+/** `friend class X;` */
+export interface FriendDeclaration {
+  /** The class name as written, for example `ns::Auditor`. */
+  name: string;
+  line: number;
 }
 
 export interface RawAttribute {
@@ -58,7 +72,7 @@ export interface RawMethod {
   /** Types of the parameters and of the return value. */
   signatureTypes: TypeExpression[];
   /** Type names used in the body, when the method is defined inside the class. */
-  bodyTypeNames: string[];
+  bodyReferences: BodyTypeReference[];
 }
 
 export interface TypeDeclaration {
@@ -79,8 +93,7 @@ export interface TypeDeclaration {
   bases: BaseClass[];
   attributes: RawAttribute[];
   methods: RawMethod[];
-  /** Type names declared as `friend class X`. */
-  friends: string[];
+  friends: FriendDeclaration[];
   enumValues?: string[];
   /** Scope used to resolve the names that appear in the declaration. */
   scope: LookupScope;
@@ -108,13 +121,14 @@ export interface OutOfClassMethod {
   /** Scope of the definition, used to resolve the owner name. */
   scope: LookupScope;
   signatureTypes: TypeExpression[];
-  bodyTypeNames: string[];
+  bodyReferences: BodyTypeReference[];
   line: number;
 }
 
 export interface IncludeDirective {
   path: string;
   isSystem: boolean;
+  line: number;
 }
 
 export interface FileSymbols {

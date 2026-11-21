@@ -9,6 +9,9 @@
 // widths are given in screen pixels and converted to world units with the
 // current zoom, so the batches are rebuilt when the zoom changes a lot (see
 // DiagramRenderer).
+//
+// The paths are kept: they tell which edge is under the pointer, and the edge
+// under the pointer is drawn again on top, in the accent color.
 
 import { BitmapText, Container, Graphics } from 'pixi.js';
 import { ALL_RELATION_KINDS, RelationKind } from '../../shared/graphModel';
@@ -26,6 +29,7 @@ import {
   edgeSegment,
   lineEndBeforeDecoration,
 } from '../model/edgeGeometry';
+import { nearestRouteWithin } from '../model/edgeHitTest';
 import { RoutedEdge, RoutingStyle, routeEdges } from '../model/edgeRouting';
 import { Rect } from '../model/geometry';
 import { AggregatedLink, DisplayedEdges, IndividualEdge } from '../model/sceneGeometry';
@@ -53,6 +57,7 @@ export class EdgeLayer {
   private readonly routesByKind = new Map<RelationKind, RoutedEdge[]>();
   private readonly aggregatedGraphics = new Graphics();
   private readonly highlightGraphics = new Graphics();
+  private readonly hoverGraphics = new Graphics();
   private readonly labels = new Container();
   private readonly baseContainer = new Container();
   private isFriendKindActive = false;
@@ -65,7 +70,7 @@ export class EdgeLayer {
       this.baseContainer.addChild(graphics);
     }
     this.baseContainer.addChild(this.aggregatedGraphics, this.labels);
-    this.container.addChild(this.baseContainer, this.highlightGraphics);
+    this.container.addChild(this.baseContainer, this.highlightGraphics, this.hoverGraphics);
   }
 
   /**
@@ -122,6 +127,41 @@ export class EdgeLayer {
     for (const kind of activeKinds) {
       const routes = (this.routesByKind.get(kind) ?? []).filter((route) => selection.has(route.edge.from) || selection.has(route.edge.to));
       drawEdgeBatch(this.highlightGraphics, routes, kind, theme.accent, theme, scale, HIGHLIGHT_WIDTH_FACTOR, undefined);
+    }
+  }
+
+  /**
+   * The edge drawn under a point, within `tolerance` diagram units. While classes are selected,
+   * their edges, which are drawn over the others, are looked at first.
+   */
+  routeAt(point: Point, tolerance: number, activeKinds: Set<RelationKind>, selection: Set<string>): RoutedEdge | undefined {
+    if (!this.container.visible) {
+      return undefined;
+    }
+    let nearestOfSelection: { route: RoutedEdge; distance: number } | undefined;
+    let nearest: { route: RoutedEdge; distance: number } | undefined;
+    for (const kind of activeKinds) {
+      const routes = this.routesByKind.get(kind) ?? [];
+      const found = nearestRouteWithin(routes, point, tolerance);
+      if (found !== undefined && (nearest === undefined || found.distance < nearest.distance)) {
+        nearest = found;
+      }
+      if (selection.size > 0) {
+        const routesOfSelection = routes.filter((route) => selection.has(route.edge.from) || selection.has(route.edge.to));
+        const foundInSelection = nearestRouteWithin(routesOfSelection, point, tolerance);
+        if (foundInSelection !== undefined && (nearestOfSelection === undefined || foundInSelection.distance < nearestOfSelection.distance)) {
+          nearestOfSelection = foundInSelection;
+        }
+      }
+    }
+    return (nearestOfSelection ?? nearest)?.route;
+  }
+
+  /** Draws the edge under the pointer over the others, in the accent color; `undefined` removes it. */
+  setHovered(route: RoutedEdge | undefined, theme: Theme, scale: number): void {
+    this.hoverGraphics.clear();
+    if (route !== undefined) {
+      drawEdgeBatch(this.hoverGraphics, [route], route.edge.kind, theme.accent, theme, scale, HIGHLIGHT_WIDTH_FACTOR, undefined);
     }
   }
 

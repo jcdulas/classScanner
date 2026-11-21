@@ -10,7 +10,7 @@
 // yields a list of members.
 
 import { MemberFlags, Visibility } from '../shared/graphModel';
-import { collectBodyTypeNames } from './bodyReferences';
+import { collectBodyTypeReferences } from './bodyReferences';
 import { RawAttribute, RawMethod, TypeExpression } from './fileSymbols';
 import { SyntaxNode, hasChildOfType, hasChildWithText, lineOf, normalizeWhitespace } from './syntaxHelpers';
 import { innerDeclarator, readTypeExpression, readTypeText } from './typeReader';
@@ -216,6 +216,6 @@ function buildMethod(parts: MethodParts): RawMethod {
     flags,
     line: lineOf(functionDeclarator),
     signatureTypes,
-    bodyTypeNames: collectBodyTypeNames(parts.bodyNodes),
+    bodyReferences: collectBodyTypeReferences(parts.bodyNodes),
   };
 }

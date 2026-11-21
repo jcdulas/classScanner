@@ -94,6 +94,14 @@ export interface Edge {
   from: string;
   to: string;
   kind: RelationKind;
+  /**
+   * Where the relation is declared, which the diagram opens when its arrow is clicked: the base
+   * class in the list of bases, the attribute, the method or the line of code that uses the
+   * other class, the `#include`, the `friend` declaration, the nested class.
+   * `file` is an index in Graph.files and `line` is 1-based, as in SourceLocation.
+   */
+  file: number;
+  line: number;
   /** Inheritance only. */
   access?: Visibility;
   /** Composition and aggregation only. */

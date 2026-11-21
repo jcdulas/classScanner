@@ -168,7 +168,14 @@
         const host = document.querySelector('.diagram-host');
         mouse('contextmenu', host.clientWidth * Number(parameters.get('x')), host.clientHeight * Number(parameters.get('y')), { button: 2 });
       },
+      // Move the pointer to the `x`, `y` point: an arrow under it is highlighted and described in a tooltip.
+      hover: async () => {
+        const host = document.querySelector('.diagram-host');
+        mouse('pointermove', host.clientWidth * Number(parameters.get('x')), host.clientHeight * Number(parameters.get('y')));
+        await wait(300);
+      },
       // Click at the `x`, `y` point, `count` times in a row (2 is a double-click). With `alt=1`, hold Alt.
+      // On an arrow, the click opens the declaration of its relation.
       // The preview script prints the files that the clicks asked the editor to open.
       click: async () => {
         const host = document.querySelector('.diagram-host');

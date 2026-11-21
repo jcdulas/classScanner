@@ -115,7 +115,7 @@ async function testRescanOnSave(api: ClassScannerApi): Promise<void> {
 
 /**
  * A folder under `src` is scanned together with its counterpart under `inc` (spec §2.2), and
- * opening a file from the diagram several times shows a single editor (spec §4.6).
+ * the files opened from the diagram all go to one editor column (spec §4.6).
  */
 async function testPairedFolders(api: ClassScannerApi): Promise<void> {
   const pairedProject = path.join(PROJECT_ROOT, 'test', 'fixtures', 'paired');
@@ -141,12 +141,36 @@ async function testPairedFolders(api: ClassScannerApi): Promise<void> {
   await api.openActiveDiagramSource('src/core/engine.cpp', 7);
   assert.equal(countTabsShowing(path.join(pairedProject, 'src', 'core', 'engine.cpp')), 1);
   assert.equal(vscode.window.tabGroups.all.length, groupCount, 'No editor column was added');
-  console.log('Paired folders: src/core was scanned with inc/core, and files open in a single editor.');
+
+  // The editor column is now moved to the left of the diagram, which leaves no column on the
+  // right of the diagram: files must open in that column, not in a new one.
+  await vscode.commands.executeCommand('workbench.action.moveActiveEditorGroupLeft');
+  // The diagram learns its new column from an event of VS Code.
+  await delay(500);
+  const codeColumn = columnsShowing(path.join(pairedProject, 'src', 'core', 'engine.cpp'))[0];
+  await api.openActiveDiagramSource('inc/core/util.h', 1);
+  assert.deepEqual(columnsShowing(path.join(pairedProject, 'inc', 'core', 'util.h')), [codeColumn], 'The file opened in the existing editor column');
+  await api.openActiveDiagramSource('src/core/util.cpp', 1);
+  assert.deepEqual(columnsShowing(path.join(pairedProject, 'src', 'core', 'util.cpp')), [codeColumn]);
+  assert.equal(vscode.window.tabGroups.all.length, groupCount, 'No editor column was added on the right of the diagram');
+  console.log('Paired folders: src/core was scanned with inc/core, and files open in a single editor column.');
 }
 
 function countTabsShowing(filePath: string): number {
-  const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs);
-  return tabs.filter((tab) => tab.input instanceof vscode.TabInputText && tab.input.uri.fsPath.toLowerCase() === filePath.toLowerCase()).length;
+  return columnsShowing(filePath).length;
+}
+
+/** The editor columns that have a tab for the file. */
+function columnsShowing(filePath: string): vscode.ViewColumn[] {
+  const columns: vscode.ViewColumn[] = [];
+  for (const group of vscode.window.tabGroups.all) {
+    for (const tab of group.tabs) {
+      if (tab.input instanceof vscode.TabInputText && tab.input.uri.fsPath.toLowerCase() === filePath.toLowerCase()) {
+        columns.push(group.viewColumn);
+      }
+    }
+  }
+  return columns;
 }
 
 async function testSyntheticProjectIfPresent(api: ClassScannerApi): Promise<void> {

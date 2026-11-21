@@ -7,24 +7,29 @@
 //   - the scope of a `qualified_identifier`, as `Registry` in
 //     `Registry::instance()`, which is usually a class or a namespace.
 // Names that are not project classes are dropped later, by the name resolver.
+//
+// Each name is kept once, with the first line that uses it: this is the line
+// the diagram opens for a dependency that comes from the code of a method.
 
-import { SyntaxNode, isSameNode, normalizeWhitespace, removeTemplateArguments } from './syntaxHelpers';
+import { BodyTypeReference } from './fileSymbols';
+import { SyntaxNode, isSameNode, lineOf, normalizeWhitespace, removeTemplateArguments } from './syntaxHelpers';
 
-export function collectBodyTypeNames(bodyNodes: SyntaxNode[]): string[] {
-  const names = new Set<string>();
+export function collectBodyTypeReferences(bodyNodes: SyntaxNode[]): BodyTypeReference[] {
+  const firstLineByName = new Map<string, number>();
   for (const bodyNode of bodyNodes) {
     // descendantsOfType runs inside tree-sitter, which is much faster than walking the tree in JavaScript.
+    // It returns the nodes in the order of the source, so the first node of a name is its first use.
     for (const node of bodyNode.descendantsOfType(['type_identifier', 'qualified_identifier'])) {
       if (node === null) {
         continue;
       }
       const name = node.type === 'type_identifier' ? fullTypeName(node) : expressionScopeName(node);
-      if (name !== '') {
-        names.add(name);
+      if (name !== '' && !firstLineByName.has(name)) {
+        firstLineByName.set(name, lineOf(node));
       }
     }
   }
-  return Array.from(names);
+  return Array.from(firstLineByName, ([name, line]) => ({ name, line }));
 }
 
 /**

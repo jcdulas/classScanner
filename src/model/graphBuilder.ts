@@ -7,9 +7,9 @@
 //   3. resolve every type name and create the edges of the seven relation kinds;
 //   4. find the file that implements each class, when it is not the file that declares it.
 
-import { LookupScope, OutOfClassMethod, TypeDeclaration, FileSymbols, TypeExpression } from '../parser/fileSymbols';
+import { BodyTypeReference, LookupScope, OutOfClassMethod, TypeDeclaration, FileSymbols, TypeExpression } from '../parser/fileSymbols';
 import { collectTypeNames } from '../parser/typeReader';
-import { ClassNode, Graph, Member, MemberFlags } from '../shared/graphModel';
+import { ClassNode, Graph, Member, MemberFlags, SourceLocation } from '../shared/graphModel';
 import { EdgeCollector } from './edgeCollector';
 import { ImplementationFinder } from './implementationFinder';
 import { IncludeResolver } from './includeResolver';
@@ -208,29 +208,31 @@ class GraphBuilder {
     const { declaration, fileSymbols } = located;
     const scope = declaration.scope;
     const usingNamespaces = fileSymbols.usingNamespaces;
+    // Each edge remembers the line that creates it, which the diagram opens (spec §4.6).
+    const file = this.fileIndexByPath.get(fileSymbols.file)!;
 
     for (const base of declaration.bases) {
       const baseId = this.resolveClass(base.type.name, scope, usingNamespaces);
       if (baseId !== undefined) {
-        this.edges.add(id, baseId, 'inherit', { access: base.access });
+        this.edges.add(id, baseId, 'inherit', { file, line: base.line }, { access: base.access });
       }
     }
     for (const attribute of declaration.attributes) {
       for (const relation of this.classifier.classify(attribute.type, scope, usingNamespaces)) {
-        this.edges.add(id, relation.targetId, relation.kind, { multiplicity: relation.multiplicity });
+        this.edges.add(id, relation.targetId, relation.kind, { file, line: attribute.line }, { multiplicity: relation.multiplicity });
       }
     }
     for (const method of declaration.methods) {
-      this.addDependencies(id, method.signatureTypes, method.bodyTypeNames, scope, usingNamespaces);
+      this.addDependencies(id, { file, line: method.line }, method.signatureTypes, method.bodyReferences, scope, usingNamespaces);
     }
-    for (const friendName of declaration.friends) {
-      const friendId = this.resolveClass(friendName, scope, usingNamespaces);
+    for (const friend of declaration.friends) {
+      const friendId = this.resolveClass(friend.name, scope, usingNamespaces);
       if (friendId !== undefined) {
-        this.edges.add(id, friendId, 'friend');
+        this.edges.add(id, friendId, 'friend', { file, line: friend.line });
       }
     }
     if (declaration.outerClass !== undefined && this.nodesById.has(declaration.outerClass)) {
-      this.edges.add(declaration.outerClass, id, 'nest');
+      this.edges.add(declaration.outerClass, id, 'nest', { file, line: declaration.line });
     }
   }
 
@@ -251,20 +253,26 @@ class GraphBuilder {
     }
     // Inside `Engine::run`, names are looked up in the scope of class Engine first.
     const ownerScope = this.scopeOfClass(ownerId, method.scope.templateParameters);
-    this.addDependencies(ownerId, method.signatureTypes, method.bodyTypeNames, ownerScope, fileSymbols.usingNamespaces);
+    const methodLocation = { file: fileIndex, line: method.line };
+    this.addDependencies(ownerId, methodLocation, method.signatureTypes, method.bodyReferences, ownerScope, fileSymbols.usingNamespaces);
   }
 
+  /**
+   * The dependencies of one method. A type of its parameters or of its return value is declared
+   * on the line of the method; a type used in its code is declared on the line that uses it.
+   */
   private addDependencies(
     fromId: string,
+    methodLocation: SourceLocation,
     signatureTypes: TypeExpression[],
-    bodyTypeNames: string[],
+    bodyReferences: BodyTypeReference[],
     scope: LookupScope,
     usingNamespaces: string[],
   ): void {
-    const names = [...signatureTypes.flatMap(collectTypeNames), ...bodyTypeNames];
-    for (const name of names) {
-      for (const targetId of this.resolveDependencyTargets(name, scope, usingNamespaces)) {
-        this.edges.add(fromId, targetId, 'depend');
+    const signatureReferences = signatureTypes.flatMap(collectTypeNames).map((name) => ({ name, line: methodLocation.line }));
+    for (const reference of [...signatureReferences, ...bodyReferences]) {
+      for (const targetId of this.resolveDependencyTargets(reference.name, scope, usingNamespaces)) {
+        this.edges.add(fromId, targetId, 'depend', { file: methodLocation.file, line: reference.line });
       }
     }
   }
@@ -300,6 +308,7 @@ class GraphBuilder {
       if (sourceId === undefined) {
         continue;
       }
+      const file = this.fileIndexByPath.get(fileSymbols.file)!;
       for (const include of fileSymbols.includes) {
         const includedFile = includeResolver.resolve(fileSymbols.file, include.path);
         if (includedFile === undefined) {
@@ -307,7 +316,7 @@ class GraphBuilder {
         }
         const targetId = this.mainClassOfFile(includedFile, this.declaredClassIdsByFile.get(includedFile));
         if (targetId !== undefined) {
-          this.edges.add(sourceId, targetId, 'include');
+          this.edges.add(sourceId, targetId, 'include', { file, line: include.line });
         }
       }
     }

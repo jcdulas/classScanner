@@ -2,7 +2,7 @@
   "name": "class-scanner",
   "displayName": "classScanner: C++ Class Diagrams",
   "description": "Interactive class diagrams of C++ code, smooth beyond 1000 classes. Scan a folder, explore the relations, export for docs or for an LLM.",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "publisher": "jcdulas",
   "license": "BSD-3-Clause",
   "icon": "assets/icon.png",

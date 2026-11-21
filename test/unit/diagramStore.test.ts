@@ -51,10 +51,10 @@ function makeGraph(): Graph {
       makeNode('b::Other', 'b'),
     ],
     edges: [
-      { from: 'a::Left', to: 'a::Base', kind: 'inherit', access: 'public' },
-      { from: 'a::Right', to: 'a::Base', kind: 'inherit', access: 'public' },
-      { from: 'a::Left', to: 'b::Part', kind: 'compose', multiplicity: '1' },
-      { from: 'a::Right', to: 'b::Other', kind: 'depend' },
+      { from: 'a::Left', to: 'a::Base', kind: 'inherit', access: 'public', file: 0, line: 1 },
+      { from: 'a::Right', to: 'a::Base', kind: 'inherit', access: 'public', file: 0, line: 1 },
+      { from: 'a::Left', to: 'b::Part', kind: 'compose', multiplicity: '1', file: 0, line: 1 },
+      { from: 'a::Right', to: 'b::Other', kind: 'depend', file: 0, line: 1 },
     ],
   };
 }

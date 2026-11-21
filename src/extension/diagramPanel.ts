@@ -16,6 +16,7 @@ import { Graph } from '../shared/graphModel';
 import { readSettings } from './configuration';
 import { logScanReport } from './scanReportLog';
 import { ArchiveLayout, writeSourceArchive } from './sourceArchive';
+import { chooseSourceColumn } from './sourceColumn';
 import { StateStore } from './stateStore';
 import { buildWebviewHtml } from './webviewHtml';
 
@@ -376,34 +377,30 @@ export class DiagramPanel {
     }
     const uri = vscode.Uri.file(path.join(this.lastGraph.root, relativePath));
     const position = new vscode.Position(Math.max(0, line - 1), 0);
+    // In that column VS Code shows the tab the file already has, or a preview tab that the
+    // next file replaces: a file is never opened twice there.
     await vscode.window.showTextDocument(uri, {
-      viewColumn: this.columnToOpenIn(uri),
+      viewColumn: this.columnToOpenIn(),
       selection: new vscode.Range(position, position),
       preview: true,
     });
   }
 
   /**
-   * The editor column in which to show a file, chosen so that a file is never opened twice.
+   * The editor column in which the diagram shows files: always the same one (sourceColumn.ts).
    *
-   * A file that already has a tab in another column is shown there. Otherwise files go to the
-   * column on the right of the diagram, always the same one. `ViewColumn.Beside` cannot be
-   * used: it means "beside the active editor", and after a first file was opened the active
-   * editor is that file, so the next one opened in a third column, and so on.
+   * `ViewColumn.Beside` cannot be used in general: it means "beside the active editor", and
+   * after a first file was opened the active editor is that file, so the next one would open
+   * in a third column, and so on. It is only used while VS Code has not told yet in which
+   * column the diagram is.
    */
-  private columnToOpenIn(uri: vscode.Uri): vscode.ViewColumn {
+  private columnToOpenIn(): vscode.ViewColumn {
     const diagramColumn = this.webviewPanel.viewColumn;
-    for (const group of vscode.window.tabGroups.all) {
-      // A tab in the column of the diagram does not count: showing it would hide the diagram.
-      if (group.viewColumn === diagramColumn) {
-        continue;
-      }
-      const showsFile = group.tabs.some((tab) => tab.input instanceof vscode.TabInputText && isSameFile(tab.input.uri, uri));
-      if (showsFile) {
-        return group.viewColumn;
-      }
+    if (diagramColumn === undefined) {
+      return vscode.ViewColumn.Beside;
     }
-    return diagramColumn === undefined ? vscode.ViewColumn.Beside : diagramColumn + 1;
+    const existingColumns = vscode.window.tabGroups.all.map((group) => group.viewColumn);
+    return chooseSourceColumn(diagramColumn, existingColumns);
   }
 
   private post(message: HostToWebviewMessage): void {
@@ -425,14 +422,6 @@ async function askArchiveLayout(): Promise<ArchiveLayout | undefined> {
   ];
   const choice = await vscode.window.showQuickPick(choices, { title: 'Layout of the .zip archive' });
   return choice?.layout;
-}
-
-/** Windows paths are case-insensitive: the same file can be written with another case there. */
-function isSameFile(first: vscode.Uri, second: vscode.Uri): boolean {
-  if (process.platform === 'win32') {
-    return first.fsPath.toLowerCase() === second.fsPath.toLowerCase();
-  }
-  return first.fsPath === second.fsPath;
 }
 
 function panelTitle(folder: string): string {

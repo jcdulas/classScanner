@@ -229,6 +229,7 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 | Click on a group title | Selects the classes of the group |
 | "Isolate" (context menu) | Shows only the class and its neighbors up to N levels (N adjustable from 1 to 5) |
 | Alt+click on a class | Opens what is under the pointer in the editor: the declaration of the member on a member line, the declaration of the class elsewhere |
+| Click on an arrow | Opens the declaration of its relation in the editor (see below). The arrow under the pointer is drawn in the accent color, with a hand cursor |
 | Double-click on a card | Cycles the mode `auto` → `full` → `compact` |
 | Double-click on a group title | Collapses or expands the group |
 | Right-click | Context menu: display modes, isolate, open the header or the source file of the class, go to the member under the pointer, exports of the selection, collapse the group |
@@ -236,15 +237,36 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 | Ctrl+Z, Ctrl+Y | Undo and redo the changes of the arrangement: moves (one step per drag), display modes, collapsed groups, layout, grouping, "Recompute layout", the layout computed for a "Show" filter (the filter itself stays as it is). Up to 50 steps, kept until the next scan |
 | Escape | Closes the menu, then clears the selection, then leaves the isolation |
 
-A tooltip shows the qualified name of a card when its text is not readable, and the counts of a merged link.
+A tooltip shows the qualified name of a card when its text is not readable, the counts of a merged link, and the relation of the arrow under the pointer with the file and line that a click opens (`Composition: Engine → Timer · click to open engine.h:12`).
 
-Each mouse gesture does one thing. A click selects, a double-click changes the display mode, a drag moves: none of them opens a file, so a file is never opened by accident, or twice by a double-click.
+Each mouse gesture does one thing. On a card, a click selects, a double-click changes the display mode, a drag moves: none of them opens a file, so a file is never opened by accident, or twice by a double-click. An arrow has nothing to select or to move, so a click on it opens its declaration; the highlight of the arrow under the pointer shows beforehand that a click does something there.
+
+Opening the declaration of a relation:
+
+- The declaration is the line of the sources that creates the relation:
+
+  | Relation | Line that is opened |
+  |---|---|
+  | Inheritance | The base class in the list of bases of the derived class |
+  | Composition, aggregation | The attribute |
+  | Dependency | The method, for a type of its parameters or of its return value; the first line that uses the class, for a type used in the code of a method |
+  | Include | The `#include` directive |
+  | Friend | The `friend` declaration |
+  | Nesting | The declaration of the nested class |
+
+- When several declarations create the same relation, the first one found is opened: declarations in class bodies come before code in `.cpp` files.
+- An arrow is under the pointer when the pointer is within 5 screen pixels of its line. Cards hide the arrows that pass behind them. While classes are selected, their arrows, drawn over the others, are looked at first, and the click keeps the selection.
+- A merged link (§4.5) stands for several relations: a click on it opens nothing.
 
 Opening a class in the editor:
 
 - A class has up to two files to open: the file that declares it, usually a header, and the file that implements it, usually a `.cpp`. The selection bar and the context menu show one entry per file, named after it (`engine.h`, `engine.cpp`), so that the user chooses.
 - The implementation is the first method of the class defined outside of it, in another file than the declaration. When methods are defined in several files, the file named like the one of the declaration wins. When no method is found, it is the top of the companion source file of the header (§4.7), if there is one. A class that lives in a single file has one entry.
-- A file is shown in one editor only. If it already has a tab in another column than the diagram, that tab is shown. Otherwise it opens in the column on the right of the diagram, always the same one, as a preview tab that the next file replaces.
+
+Where files open, whatever opened them (a class, a member, an arrow, a search result):
+
+- Every file opens in the same editor column: the column on the right of the diagram; when there is none, the column on its left; when the diagram is alone, a new column on its right. A third column is never created while a column that can show code exists.
+- In that column a file is shown in one editor only: the tab it already has, or a preview tab that the next file replaces.
 
 The diagram fills the whole view; the user interface floats above it:
 
@@ -347,6 +369,7 @@ interface Member {
 interface Edge {
   from: string; to: string;
   kind: 'inherit' | 'compose' | 'aggregate' | 'depend' | 'include' | 'friend' | 'nest';
+  file: number; line: number;                    // where the relation is declared (§4.6)
   access?: 'public' | 'protected' | 'private';   // inheritance
   multiplicity?: '1' | '*';                      // composition, aggregation
 }
@@ -393,9 +416,9 @@ The measurements were made on the synthetic project of the test suite (`npm run 
 ## 9. Tests
 
 - **Unit tests** (`npm test`, vitest): a corpus of C++ files covering each construct (multiple inheritance, templates, nested classes, export macros, `#if`...) in `test/fixtures/constructs`, a small multi-file project in `test/fixtures/project`, a project with paired `inc` and `src` trees in `test/fixtures/paired`, and tests of name resolution, relations, card geometry, layouts, the webview store, the schema and the source file collection.
-- **Integration tests** (`npm run test:integration`): run the extension in VS Code 1.130.0 (or another version with `--vscode-version`), scan the fixture project, check that the webview reports the diagram on screen without error, check the saved arrangement, and export PNG, SVG, schema and `.zip` files to `out/integration/`. They also scan one half of a pair of folders, and check that opening a file twice from the diagram shows a single editor. On the synthetic project they also measure frame times and relation toggle times.
+- **Integration tests** (`npm run test:integration`): run the extension in VS Code 1.130.0 (or another version with `--vscode-version`), scan the fixture project, check that the webview reports the diagram on screen without error, check the saved arrangement, and export PNG, SVG, schema and `.zip` files to `out/integration/`. They also scan one half of a pair of folders, and check that files opened from the diagram go to a single editor column, on the right of the diagram or on its left, and that opening a file twice shows a single editor. On the synthetic project they also measure frame times and relation toggle times.
 - **Benchmark** (`npm run benchmark`): scan and layout times on the synthetic project.
-- **Preview** (`npm run preview`): renders the webview in a headless browser, outside of VS Code, and saves a screenshot. Scenarios play user actions first (Ctrl+drag selection, wheel zoom, right-click, click, double-click and Alt+click on a card, dragging a card, Ctrl+Z, typing in the search box), which shows that these interactions work; the script prints the files that the scenario asked the editor to open.
+- **Preview** (`npm run preview`): renders the webview in a headless browser, outside of VS Code, and saves a screenshot. Scenarios play user actions first (Ctrl+drag selection, wheel zoom, right-click, click, double-click and Alt+click on a card, hovering and clicking an arrow, dragging a card, Ctrl+Z, typing in the search box), which shows that these interactions work; the script prints the files that the scenario asked the editor to open.
 - Not automated: assertions on mouse interactions, and validation on a real, large open-source project.
 
 ## 10. Milestones

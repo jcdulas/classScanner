@@ -80,6 +80,11 @@ export function describeEdges(edges: Edge[]): string[] {
   });
 }
 
+/** Where each relation is declared, as `kind from -> to: file:line`. */
+export function describeEdgeLocations(graph: Graph): string[] {
+  return graph.edges.map((edge) => `${edge.kind} ${edge.from} -> ${edge.to}: ${graph.files[edge.file]}:${edge.line}`);
+}
+
 export function findType(symbols: FileSymbols, qualifiedName: string): TypeDeclaration {
   const found = symbols.types.find((type) => type.qualifiedName === qualifiedName);
   if (found === undefined) {

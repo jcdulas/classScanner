@@ -133,8 +133,8 @@ describe('preprocessor', () => {
   it('reads include directives', async () => {
     const symbols = await parseConstructFixture('preprocessor.hpp');
     expect(symbols.includes).toEqual([
-      { path: 'core/device.h', isSystem: false },
-      { path: 'vector', isSystem: true },
+      { path: 'core/device.h', isSystem: false, line: 2 },
+      { path: 'vector', isSystem: true, line: 3 },
     ]);
   });
 });
@@ -162,7 +162,13 @@ describe('method definitions outside their class', () => {
     const run = symbols.outOfClassMethods[0];
     expect(run.ownerName).toBe('core::Engine');
     expect(run.scope.namespacePath).toEqual(['app']);
-    expect(run.bodyTypeNames).toEqual(['Timer', 'Factory', 'Registry', 'DerivedScene']);
+    // Each name comes with the first line that uses it.
+    expect(run.bodyReferences).toEqual([
+      { name: 'Timer', line: 7 },
+      { name: 'Factory', line: 8 },
+      { name: 'Registry', line: 9 },
+      { name: 'DerivedScene', line: 10 },
+    ]);
     expect(run.signatureTypes.map((type) => type.name)).toEqual(['Scene', 'void']);
   });
 
@@ -176,6 +182,9 @@ describe('method definitions outside their class', () => {
 describe('friends', () => {
   it('reads friend classes and skips friend functions', async () => {
     const secret = findType(await parseConstructFixture('friends.hpp'), 'Secret');
-    expect(secret.friends).toEqual(['Inspector', 'ns::Auditor']);
+    expect(secret.friends).toEqual([
+      { name: 'Inspector', line: 5 },
+      { name: 'ns::Auditor', line: 6 },
+    ]);
   });
 });

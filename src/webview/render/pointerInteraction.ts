@@ -9,18 +9,22 @@
 //   Ctrl/Cmd + click a card        add it to the selection, or remove it (Shift + click does the same)
 //   Alt + click a card             open what is under the pointer in the editor: the declaration
 //                                  of the member on a member line, of the class elsewhere
+//   click an arrow                 open the declaration of its relation in the editor
 //   double-click a card            cycle its display mode
 //   double-click a group title     collapse or expand the group
 //   right-click                    context menu
 //
-// Each gesture does one thing. In particular a plain click only selects: it
-// never opens a file, so that selecting, dragging or double-clicking a card
-// cannot open one by accident. Files are opened with Alt + click, the context
-// menu or the selection bar.
+// Each gesture does one thing. In particular a plain click on a card only
+// selects: it never opens a file, so that selecting, dragging or
+// double-clicking a card cannot open one by accident. The files of a class are
+// opened with Alt + click, the context menu or the selection bar. An arrow has
+// nothing to select or to move, so a click on it opens its declaration; the
+// arrow under the pointer is highlighted, which shows what a click will do.
 //
 // A press only becomes a drag once the pointer has moved a few pixels, so
 // that a slightly shaky click is still a click.
 
+import { SourceLocation } from '../../shared/graphModel';
 import { Point } from '../../shared/savedState';
 import { CardRow } from '../model/cardGeometry';
 import { Rect } from '../model/geometry';
@@ -35,12 +39,16 @@ export interface InteractionContext {
   camera: Camera;
   hitTest(worldPoint: Point): HitTarget | undefined;
   rowAt(cardId: string, worldPoint: Point): CardRow | undefined;
+  /** Where the relation of the arrow under the point is declared, when there is an arrow. */
+  relationDeclarationAt(worldPoint: Point): SourceLocation | undefined;
   openSource(file: number, line: number): void;
   idsInRect(worldRect: Rect): string[];
   groupMemberIds(groupKey: string): string[];
   showSelectionRectangle(worldRect: Rect | undefined): void;
   onCameraMoved(): void;
   onHover(worldPoint: Point, screenPoint: Point): void;
+  /** The pointer left the diagram. */
+  onHoverEnded(): void;
 }
 
 interface Modifiers {
@@ -67,6 +75,7 @@ export class PointerInteraction {
     element.addEventListener('pointerdown', (event) => this.onPointerDown(event));
     element.addEventListener('pointermove', (event) => this.onPointerMove(event));
     element.addEventListener('pointerup', (event) => this.onPointerUp(event));
+    element.addEventListener('pointerleave', () => this.context.onHoverEnded());
     element.addEventListener('dblclick', (event) => this.onDoubleClick(event));
     element.addEventListener('wheel', (event) => this.onWheel(event), { passive: false });
     element.addEventListener('contextmenu', (event) => this.onContextMenu(event));
@@ -178,12 +187,19 @@ export class PointerInteraction {
   private handleClick(pressed: Extract<Gesture, { kind: 'pressed' }>, world: Point): void {
     const { store } = this.context;
     const target = pressed.target;
+    // Ctrl or Shift keeps the current selection and changes it; a plain click replaces it.
+    const keepsSelection = pressed.modifiers.command || pressed.modifiers.shift;
     if (target === undefined) {
+      // Cards hide the arrows that pass behind them, so an arrow is only looked for outside of the cards.
+      const declaration = keepsSelection ? undefined : this.context.relationDeclarationAt(world);
+      if (declaration !== undefined) {
+        // The selection is kept: its arrows stay highlighted, ready for the next click.
+        this.context.openSource(declaration.file, declaration.line);
+        return;
+      }
       store.clearSelection();
       return;
     }
-    // Ctrl or Shift keeps the current selection and changes it; a plain click replaces it.
-    const keepsSelection = pressed.modifiers.command || pressed.modifiers.shift;
     if (target.kind !== 'card') {
       store.select(this.context.groupMemberIds(target.key), keepsSelection ? 'add' : 'replace');
       return;

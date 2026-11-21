@@ -6,6 +6,7 @@ import {
   FIXTURES_DIRECTORY,
   buildGraphFromSources,
   buildGraphResultFromSources,
+  describeEdgeLocations,
   describeEdges,
   scanTestFolder,
 } from './testHelpers';
@@ -86,6 +87,38 @@ describe('fixture project', () => {
       'include geo::Scene -> geo::Renderer',
       // scene.h includes "shape.h", relative to its own folder.
       'include geo::Scene -> geo::Shape',
+    ]);
+  });
+
+  it('records where each relation is declared', async () => {
+    const { graph } = await scanTestFolder(PROJECT_FOLDER);
+    expect(describeEdgeLocations(graph)).toEqual(
+      expect.arrayContaining([
+        // The base class in the list of bases.
+        'inherit geo::Circle -> geo::Shape: include/geometry/shape.h:25',
+        // The attribute.
+        'compose geo::Shape -> geo::Point: include/geometry/shape.h:22',
+        'aggregate geo::Scene -> geo::Layer: include/geometry/scene.h:21',
+        // The method, for a type of its parameters.
+        'depend geo::Shape -> geo::Canvas: include/geometry/shape.h:19',
+        // The line of code, for a type used in the body of a method.
+        'depend geo::Scene -> geo::Renderer: src/scene.cpp:7',
+        'depend geo::Scene -> geo::Logger: src/scene.cpp:8',
+        'include geo::Scene -> geo::Renderer: src/scene.cpp:2',
+        'friend geo::Scene -> geo::SceneInspector: include/geometry/scene.h:24',
+        // The declaration of the nested class.
+        'nest geo::Scene -> geo::Scene::Statistics: include/geometry/scene.h:16',
+      ]),
+    );
+  });
+
+  it('gives each base class of a list its own line', async () => {
+    const graph = await buildGraphFromSources({
+      'derived.h': 'class First {};\nclass Second {};\nclass Derived :\n  public First,\n  public Second {};',
+    });
+    expect(describeEdgeLocations(graph)).toEqual([
+      'inherit Derived -> First: derived.h:4',
+      'inherit Derived -> Second: derived.h:5',
     ]);
   });
 

@@ -1,27 +1,35 @@
 // Collects the edges of the graph and applies the deduplication rules of spec §3.
 //
-//   - Edges of the same kind between the same two classes are kept once.
+//   - Edges of the same kind between the same two classes are kept once, with
+//     the place of the first declaration that was found for them.
 //     For composition and aggregation, a `*` multiplicity wins over `1`.
 //   - Edges from a class to itself are dropped (a linked-list node pointing to
 //     the next node, for example): they would only clutter the diagram.
 //   - A dependency from A to B is dropped when A already inherits from,
 //     composes or aggregates B, since those relations imply the dependency.
 
-import { Edge, RelationKind, Visibility } from '../shared/graphModel';
+import { Edge, RelationKind, SourceLocation, Visibility } from '../shared/graphModel';
 
 const RELATIONS_THAT_IMPLY_DEPENDENCY: RelationKind[] = ['inherit', 'compose', 'aggregate'];
 
 export class EdgeCollector {
   private readonly edgesByKey = new Map<string, Edge>();
 
-  add(from: string, to: string, kind: RelationKind, details: { access?: Visibility; multiplicity?: '1' | '*' } = {}): void {
+  /** `declaredAt` is the place in the sources that creates the relation (see Edge in graphModel.ts). */
+  add(
+    from: string,
+    to: string,
+    kind: RelationKind,
+    declaredAt: SourceLocation,
+    details: { access?: Visibility; multiplicity?: '1' | '*' } = {},
+  ): void {
     if (from === to) {
       return;
     }
     const key = edgeKey(from, to, kind);
     const existing = this.edgesByKey.get(key);
     if (existing === undefined) {
-      this.edgesByKey.set(key, { from, to, kind, ...details });
+      this.edgesByKey.set(key, { from, to, kind, file: declaredAt.file, line: declaredAt.line, ...details });
     } else if (details.multiplicity === '*') {
       existing.multiplicity = '*';
     }

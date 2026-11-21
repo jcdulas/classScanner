@@ -7,10 +7,11 @@
 // later if we know where they were written.
 
 import { EntityKind, Visibility } from '../shared/graphModel';
-import { collectBodyTypeNames } from './bodyReferences';
+import { collectBodyTypeReferences } from './bodyReferences';
 import {
   BaseClass,
   FileSymbols,
+  FriendDeclaration,
   LookupScope,
   OutOfClassMethod,
   TypeDeclaration,
@@ -252,7 +253,7 @@ class DeclarationExtractor {
         this.visitMemberTemplate(member, declaration, visibility);
         return;
       case 'friend_declaration':
-        declaration.friends.push(...readFriendNames(member));
+        declaration.friends.push(...readFriends(member));
         return;
       case 'alias_declaration':
         this.visitAliasDeclaration(member, classScope);
@@ -356,7 +357,7 @@ class DeclarationExtractor {
       ownerName: qualifiedMethodName.slice(0, ownerEnd),
       scope,
       signatureTypes,
-      bodyTypeNames: collectBodyTypeNames(readFunctionBodyNodes(node)),
+      bodyReferences: collectBodyTypeReferences(readFunctionBodyNodes(node)),
       line: lineOf(node),
     };
     this.symbols.outOfClassMethods.push(method);
@@ -377,11 +378,11 @@ class DeclarationExtractor {
       return;
     }
     if (pathNode.type === 'system_lib_string') {
-      this.symbols.includes.push({ path: pathNode.text.slice(1, -1), isSystem: true });
+      this.symbols.includes.push({ path: pathNode.text.slice(1, -1), isSystem: true, line: lineOf(node) });
     } else if (pathNode.type === 'string_literal') {
       const content = pathNode.namedChildren.find((child) => child !== null && child.type === 'string_content');
       if (content !== undefined && content !== null) {
-        this.symbols.includes.push({ path: content.text, isSystem: false });
+        this.symbols.includes.push({ path: content.text, isSystem: false, line: lineOf(node) });
       }
     }
   }
@@ -417,7 +418,7 @@ function readBaseClasses(classNode: SyntaxNode, defaultAccess: Visibility): Base
       access = defaultAccess;
       isVirtual = false;
     } else if (BASE_TYPE_NODE_TYPES.has(token.type)) {
-      bases.push({ type: readTypeExpression(token, null), access, isVirtual });
+      bases.push({ type: readTypeExpression(token, null), access, isVirtual, line: lineOf(token) });
     }
   }
   return bases;
@@ -442,22 +443,22 @@ function readEnumValues(body: SyntaxNode): string[] {
 }
 
 /** `friend class Inspector;` names a class. `friend void f();` declares a function and is skipped. */
-function readFriendNames(node: SyntaxNode): string[] {
-  const names: string[] = [];
+function readFriends(node: SyntaxNode): FriendDeclaration[] {
+  const friends: FriendDeclaration[] = [];
   for (const child of node.namedChildren) {
     if (child === null) {
       continue;
     }
     if (BASE_TYPE_NODE_TYPES.has(child.type)) {
-      names.push(readQualifiedName(child));
+      friends.push({ name: readQualifiedName(child), line: lineOf(node) });
     } else if (CLASS_SPECIFIER_TYPES.has(child.type)) {
       const nameNode = child.childForFieldName('name');
       if (nameNode !== null) {
-        names.push(readQualifiedName(nameNode));
+        friends.push({ name: readQualifiedName(nameNode), line: lineOf(node) });
       }
     }
   }
-  return names;
+  return friends;
 }
 
 /** `template <typename T, int N = 3>` gives ['T', 'N']. */

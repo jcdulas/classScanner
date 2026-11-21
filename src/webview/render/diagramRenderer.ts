@@ -9,7 +9,7 @@
 // groups, group titles, selection rectangle.
 
 import { Application, Container, Graphics, Rectangle } from 'pixi.js';
-import { RelationKind } from '../../shared/graphModel';
+import { Edge, RelationKind } from '../../shared/graphModel';
 import { ExportScope, FrameStatistics } from '../../shared/messages';
 import { Point } from '../../shared/savedState';
 import { CardRow, FontMetrics } from '../model/cardGeometry';
@@ -25,8 +25,10 @@ import {
   isCardShown,
 } from '../model/sceneGeometry';
 import { edgeSegment } from '../model/edgeGeometry';
-import { RoutingStyle, routingStyleForLayout } from '../model/edgeRouting';
+import { distanceToSegment } from '../model/edgeHitTest';
+import { RoutedEdge, RoutingStyle, routingStyleForLayout } from '../model/edgeRouting';
 import { ChangeTopic, DiagramStore, LevelOfDetail, StoreChange } from '../state/diagramStore';
+import { RELATION_LABELS } from '../ui/labels';
 import { Camera, ViewInsets } from './camera';
 import { CardLayer } from './cardLayer';
 import { EdgeLayer } from './edgeLayer';
@@ -53,6 +55,8 @@ const EDGE_REBUILD_ZOOM_FACTOR = 1.3;
 /** Delay after the last camera move before the text and the edges are redrawn for the new view. */
 const CAMERA_SETTLE_MS = 150;
 const LAYOUT_ANIMATION_MS = 450;
+/** An arrow is under the pointer when the pointer is this close to its line, in screen pixels. */
+const EDGE_HIT_TOLERANCE_PIXELS = 5;
 
 interface PositionAnimation {
   from: Map<string, Point>;
@@ -74,6 +78,8 @@ export class DiagramRenderer {
   private theme: Theme;
   private groupBoxes = new Map<string, GroupBox>();
   private displayedEdges: DisplayedEdges = { individual: [], aggregated: [] };
+  /** The arrow under the pointer, drawn in the accent color: a click opens its declaration. */
+  private hoveredRoute: RoutedEdge | undefined;
   private dirty = new Set<DirtyTopic>();
   private level: LevelOfDetail = 'compact';
   private isCameraDirty = true;
@@ -121,12 +127,14 @@ export class DiagramRenderer {
       camera: this.camera,
       hitTest: (point) => this.spatialIndex.hitTest(point)?.target,
       rowAt: (cardId, point) => this.rowAt(cardId, point),
+      relationDeclarationAt: (point) => this.routeAt(point)?.edge,
       openSource: (file, line) => callbacks.openSource(file, line),
       idsInRect: (rect) => this.cardIdsInRect(rect),
       groupMemberIds: (key) => this.groupBoxes.get(key)?.memberIds ?? [],
       showSelectionRectangle: (rect) => this.drawSelectionRectangle(rect),
       onCameraMoved: () => this.markCameraMoved(),
-      onHover: (world, screen) => this.updateTooltip(world, screen),
+      onHover: (world, screen) => this.updateHover(world, screen),
+      onHoverEnded: () => this.clearHover(),
     });
 
     store.subscribe((change) => this.onStoreChange(change));
@@ -424,6 +432,8 @@ export class DiagramRenderer {
 
   /** Redraws the edges of every active relation kind, for the current view and zoom. */
   private rebuildEdges(): void {
+    // The paths are computed again: the highlighted arrow is found again at the next pointer move.
+    this.setHoveredRoute(undefined);
     const view = this.camera.visibleWorldRect();
     this.edgeCullRect = expandRect(view, Math.max(view.width, view.height) * 0.5);
     this.edgeBuildScale = this.camera.scale;
@@ -442,6 +452,7 @@ export class DiagramRenderer {
    * showing a kind redraws its batch only if it is out of date.
    */
   private updateEdgesForRelationChange(): void {
+    this.setHoveredRoute(undefined);
     const activeKinds = this.store.activeRelations;
     this.displayedEdges = computeDisplayedEdges(this.store, this.groupBoxes, this.displayedEdgesOptions());
     const kindsToRedraw = Array.from(activeKinds).filter((kind) => !this.upToDateEdgeKinds.has(kind));
@@ -589,12 +600,29 @@ export class DiagramRenderer {
     }
   }
 
-  /** Tooltips: the qualified name of a card when its text is not readable, the counts of a merged link. */
-  private updateTooltip(world: Point, screen: Point): void {
+  /** The arrow under a point of the diagram. Cards and group titles hide the arrows behind them. */
+  private routeAt(world: Point): RoutedEdge | undefined {
+    if (this.spatialIndex.hitTest(world) !== undefined) {
+      return undefined;
+    }
+    const tolerance = EDGE_HIT_TOLERANCE_PIXELS / this.camera.scale;
+    return this.edgeLayer.routeAt(world, tolerance, this.store.activeRelations, this.store.selection);
+  }
+
+  /**
+   * What the pointer is over: the arrow under it is highlighted, and a tooltip shows the
+   * relation of an arrow, the qualified name of a card when its text is not readable, or the
+   * counts of a merged link.
+   */
+  private updateHover(world: Point, screen: Point): void {
     const target = this.spatialIndex.hitTest(world);
+    const route = this.routeAt(world);
+    this.setHoveredRoute(route);
     let text: string | undefined;
     if (target?.target.kind === 'card' && this.level !== 'full') {
       text = target.target.id;
+    } else if (route !== undefined) {
+      text = this.relationText(route.edge);
     } else if (target === undefined) {
       text = this.aggregatedLinkTextAt(world);
     }
@@ -603,9 +631,38 @@ export class DiagramRenderer {
       return;
     }
     this.tooltip.textContent = text;
-    this.tooltip.style.left = `${screen.x + 14}px`;
-    this.tooltip.style.top = `${screen.y + 14}px`;
     this.tooltip.hidden = false;
+    // Below and to the right of the pointer, or on the other side when it would leave the view.
+    const gap = 14;
+    const fitsOnTheRight = screen.x + gap + this.tooltip.offsetWidth <= this.camera.viewWidth;
+    const fitsBelow = screen.y + gap + this.tooltip.offsetHeight <= this.camera.viewHeight;
+    const left = fitsOnTheRight ? screen.x + gap : screen.x - gap - this.tooltip.offsetWidth;
+    const top = fitsBelow ? screen.y + gap : screen.y - gap - this.tooltip.offsetHeight;
+    this.tooltip.style.left = `${Math.max(0, left)}px`;
+    this.tooltip.style.top = `${Math.max(0, top)}px`;
+  }
+
+  private clearHover(): void {
+    this.setHoveredRoute(undefined);
+    this.tooltip.hidden = true;
+  }
+
+  private setHoveredRoute(route: RoutedEdge | undefined): void {
+    if (route === this.hoveredRoute) {
+      return;
+    }
+    this.hoveredRoute = route;
+    this.edgeLayer.setHovered(route, this.theme, this.edgeBuildScale);
+    // The hand cursor says that a click does something here.
+    this.app.canvas.style.cursor = route === undefined ? '' : 'pointer';
+  }
+
+  /** For the tooltip of an arrow: `Composition: Engine → Timer · click to open engine.h:12`. */
+  private relationText(edge: Edge): string {
+    const nameOf = (id: string) => this.store.nodeById.get(id)?.name ?? id;
+    const filePath = this.store.graph?.files[edge.file] ?? '';
+    const fileName = filePath.slice(filePath.lastIndexOf('/') + 1);
+    return `${RELATION_LABELS[edge.kind]}: ${nameOf(edge.from)} \u2192 ${nameOf(edge.to)} \u00b7 click to open ${fileName}:${edge.line}`;
   }
 
   private aggregatedLinkTextAt(world: Point): string | undefined {
@@ -778,13 +835,4 @@ function containsRect(outer: Rect, inner: Rect): boolean {
     rectContainsPoint(outer, { x: inner.x, y: inner.y }) &&
     rectContainsPoint(outer, { x: inner.x + inner.width, y: inner.y + inner.height })
   );
-}
-
-function distanceToSegment(point: Point, start: Point, end: Point): number {
-  const lengthSquared = (end.x - start.x) ** 2 + (end.y - start.y) ** 2;
-  if (lengthSquared === 0) {
-    return Math.hypot(point.x - start.x, point.y - start.y);
-  }
-  const t = Math.max(0, Math.min(1, ((point.x - start.x) * (end.x - start.x) + (point.y - start.y) * (end.y - start.y)) / lengthSquared));
-  return Math.hypot(point.x - (start.x + t * (end.x - start.x)), point.y - (start.y + t * (end.y - start.y)));
 }

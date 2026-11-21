@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.8
+
+- A click on an arrow opens the line that declares its relation: the base class of an inheritance, the attribute of a composition or an aggregation, the method or the line of code of a dependency, the `#include`, the `friend` declaration, the nested class. The arrow under the pointer is highlighted, and a tooltip says what the click opens.
+- Files opened from the diagram always go to the same editor column. When the only other column was on the left of the diagram, or when the file was already open in another column, a member and a class could open in two different columns.
+
 ## 0.1.7
 
 - Faster scan on network drives and other slow disks, about 4 times on a project of 2000 files: the files are listed with one disk access per folder instead of one per file, and they are read in parallel by the parser workers.
