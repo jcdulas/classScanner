@@ -51,6 +51,13 @@ export function SelectionBar({ controller }: SelectionBarProps) {
           ))}
         </>
       )}
+      <GlassButton
+        icon="interface"
+        label="Interface"
+        title="List how the selection is interfaced with the rest of the code: what uses it, and what it uses"
+        isActive={store.isInterfacePanelOpen}
+        onPress={() => store.toggleInterfacePanel()}
+      />
       <SchemaButton controller={controller} />
       <GlassButton icon="archive" label="Sources" title="Save the source files of the selection in a .zip archive" onPress={() => controller.exportSelectionSources()} />
       <GlassButton icon="close" title="Clear the selection (Escape)" onPress={() => store.clearSelection()} />

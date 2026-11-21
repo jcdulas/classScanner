@@ -128,11 +128,29 @@ Rules:
 
 - Template arguments are explored: `std::map<Key, std::shared_ptr<Value>>` produces one relation to `Key` and one to `Value`.
 - A dependency from A to B is not created when an inheritance, composition or aggregation from A to B already exists.
-- Edges of the same type between the same two classes are deduplicated; for composition and aggregation, a `*` multiplicity wins over `1`.
+- Edges of the same type between the same two classes are deduplicated; for composition and aggregation, a `*` multiplicity wins over `1`. The edge keeps every line that declares it, with the attribute or the method that does: two attributes of the same class, the methods that take it as a parameter, the first line of each method that uses it in its code.
 - Edges from a class to itself are dropped.
 - Dependencies found in `.cpp` bodies are attached to the class that owns the method. Code in free functions is ignored.
 - An include is a relation between two files. Drawing it between every class of one file and every class of the other would add many edges that say nothing more, so it is drawn once, between the main class of each file: the class named like the file (`scene.h` and `Scene`), otherwise the first class that is not nested in another. For a `.cpp` file, the classes considered are those whose methods it defines.
 - Without the include paths of the compiler, an include is matched to a scanned file relative to the folder of the including file, then by path suffix (`<mylib/core/engine.h>` finds `include/mylib/core/engine.h`). When several files match, the one whose folders resemble most those of the including file wins: `#include "util.h"` in `src/core/engine.cpp` is `inc/core/util.h`, not `inc/net/util.h`.
+
+### 3.1 Method calls
+
+The scan also finds the calls from a method of a class to a method of another class. They are not drawn in the diagram: they detail the interface of a selection (§4.8).
+
+Without a compiler, the class of the object of a call is not always known. A call is kept only when the source names the class, and dropped otherwise: a call that is listed is right most of the time, but calls are missed.
+
+| Call | Kept when |
+|---|---|
+| `scene->add()`, `scene.add()`, `this->scene->add()` | `scene` is a parameter or a local variable of the method, or an attribute of the class, and its declared type names a project class. Template arguments are explored, so a `std::unique_ptr<Scene>` is a `Scene`. The variable of a range-based `for` counts as a local variable |
+| `Registry::instance()` | The name before `::` is a project class. Calls into `std` are ignored |
+| `update()`, `this->update()` | The class does not declare `update` itself and one of its base classes provides it: the call goes to that base class |
+| Any other object: `factory().create()`, a variable declared with `auto` | Exactly one of the classes that the caller has an inheritance, composition, aggregation or dependency relation to has a method of that name |
+
+- In every case the class must have a method of that name, declared by itself or by one of its base classes. The call goes to the class of the object, even when the method is declared by one of its base classes.
+- A class that is only forward-declared in the scan has no known method: it is trusted when the source names it.
+- Calls inside a class, and calls of free functions, are not listed. Constructors are not calls: the dependency relation already shows them.
+- A call is kept once per calling method, called class and method name, with the line of its first occurrence.
 
 ## 4. Diagram
 
@@ -176,7 +194,7 @@ Three levels of detail, driven by the zoom:
 
 This semantic zoom is controlled by the "Simplify cards" switch of the side panel, on by default. When it is off, cards keep the content of the Full level at every zoom level. Their text is only drawn when it is at least about 2 screen pixels tall (zoom of 0.15 and above): below that it cannot be seen, and drawing it for 1500 cards costs 20 frames per second instead of 60.
 
-Each class has a display mode: `auto` (default, follows the zoom), `compact` or `full` (pinned). At the Overview level every card is a plain rectangle whatever its mode: text would not be readable there. Pinning is done with a double-click, the context menu, or on the whole selection. Two global buttons force everything to compact or to full; a third one returns to `auto`. As almost every card then changes size, these three buttons compute the layout again.
+Each class has a display mode: `auto` (default, follows the zoom), `compact` or `full` (pinned). At the Overview level every card is a plain rectangle whatever its mode: text would not be readable there. Pinning is done with Alt+double-click, the context menu, or on the whole selection. Two global buttons force everything to compact or to full; a third one returns to `auto`. As almost every card then changes size, these three buttons compute the layout again.
 
 Card footprint in the layout:
 
@@ -225,21 +243,22 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 | Shift+drag on the background | Rectangle selection added to the selection |
 | Drag a card or a group title | Moves it. Dragging a selected card moves the whole selection |
 | Click on a class | Selects it alone, with neighborhood focus: its relations are highlighted, the rest is dimmed. Nothing else: a click never opens a file |
+| Double-click on a class | Opens what is under the pointer in the editor: the member on a member line, the class elsewhere. It opens the definition, in the `.cpp` file, unless the side panel says the declaration (see below) |
+| Shift+double-click on a class | The same, on the other side: the declaration when a double-click opens the definition |
 | Ctrl+click on a class (Cmd on macOS), or Shift+click | Adds the class to the selection, or removes it |
 | Click on a group title | Selects the classes of the group |
 | "Isolate" (context menu) | Shows only the class and its neighbors up to N levels (N adjustable from 1 to 5) |
-| Alt+click on a class | Opens what is under the pointer in the editor: the declaration of the member on a member line, the declaration of the class elsewhere |
 | Click on an arrow | Opens the declaration of its relation in the editor (see below). The arrow under the pointer is drawn in the accent color, with a hand cursor |
-| Double-click on a card | Cycles the mode `auto` → `full` → `compact` |
+| Alt+double-click on a card | Cycles the mode `auto` → `full` → `compact` |
 | Double-click on a group title | Collapses or expands the group |
-| Right-click | Context menu: display modes, isolate, open the header or the source file of the class, go to the member under the pointer, exports of the selection, collapse the group |
-| Ctrl+F | Search by name (substring, case-insensitive) among classes, methods and attributes. Enter recenters on the class of the result, Ctrl+Enter opens the result in the editor |
+| Right-click | Context menu: display modes, isolate, open the header or the source file of the class, go to the member under the pointer (to its declaration or to its definition, when a method is defined outside its class), exports of the selection, collapse the group |
+| Ctrl+F | Search by name (substring, case-insensitive) among classes, methods and attributes. Enter recenters on the class of the result, Ctrl+Enter opens the result in the editor, on the side that a double-click opens |
 | Ctrl+Z, Ctrl+Y | Undo and redo the changes of the arrangement: moves (one step per drag), display modes, collapsed groups, layout, grouping, "Recompute layout", the layout computed for a "Show" filter (the filter itself stays as it is). Up to 50 steps, kept until the next scan |
 | Escape | Closes the menu, then clears the selection, then leaves the isolation |
 
 A tooltip shows the qualified name of a card when its text is not readable, the counts of a merged link, and the relation of the arrow under the pointer with the file and line that a click opens (`Composition: Engine → Timer · click to open engine.h:12`).
 
-Each mouse gesture does one thing. On a card, a click selects, a double-click changes the display mode, a drag moves: none of them opens a file, so a file is never opened by accident, or twice by a double-click. An arrow has nothing to select or to move, so a click on it opens its declaration; the highlight of the arrow under the pointer shows beforehand that a click does something there.
+Each mouse gesture does one thing. On a card, a click selects, a drag moves and a double-click opens the code: selecting or moving a card never opens a file by accident. An arrow has nothing to select or to move, so a click on it opens its declaration; the highlight of the arrow under the pointer shows beforehand that a click does something there.
 
 Opening the declaration of a relation:
 
@@ -254,7 +273,7 @@ Opening the declaration of a relation:
   | Friend | The `friend` declaration |
   | Nesting | The declaration of the nested class |
 
-- When several declarations create the same relation, the first one found is opened: declarations in class bodies come before code in `.cpp` files.
+- When several declarations create the same relation, the first one found is opened: declarations in class bodies come before code in `.cpp` files. The interface of a selection lists them all (§4.8).
 - An arrow is under the pointer when the pointer is within 5 screen pixels of its line. Cards hide the arrows that pass behind them. While classes are selected, their arrows, drawn over the others, are looked at first, and the click keeps the selection.
 - A merged link (§4.5) stands for several relations: a click on it opens nothing.
 
@@ -262,6 +281,13 @@ Opening a class in the editor:
 
 - A class has up to two files to open: the file that declares it, usually a header, and the file that implements it, usually a `.cpp`. The selection bar and the context menu show one entry per file, named after it (`engine.h`, `engine.cpp`), so that the user chooses.
 - The implementation is the first method of the class defined outside of it, in another file than the declaration. When methods are defined in several files, the file named like the one of the declaration wins. When no method is found, it is the top of the companion source file of the header (§4.7), if there is one. A class that lives in a single file has one entry.
+
+Opening a class or a member with a double-click:
+
+- Code has two sides: the declaration, in the body of the class, usually in a header, and the definition, usually in a `.cpp` file. A double-click opens one side and Shift+double-click the other. The "Double-click" section of the side panel chooses the side of the plain double-click: "Source" (the definition, the default) or "Header" (the declaration). The choice is saved with the diagram (§6).
+- For a class, the declaration and the definition are the two files described above. For a method, the definition is the line where its code starts, when the method is defined outside its class (`void Engine::run() { … }`), in a `.cpp` file or further down in the header.
+- Overloads are told apart by the types of their parameters and of their return value, compared by their short names (`Scene::Item` is `Item`). Overloads with the same types, such as `begin()` and `begin() const`, get their definitions in the order of the class.
+- What has no definition of its own opens at its declaration on both sides: an attribute, a method written in the body of its class or without code in the scanned files, a class that lives in a single file.
 
 Where files open, whatever opened them (a class, a member, an arrow, a search result):
 
@@ -276,12 +302,14 @@ The diagram fills the whole view; the user interface floats above it:
 - **Side panel** (left, can be hidden; each section can be folded):
   - a switch for each of the seven relation types, with its line style and edge count;
   - "Zoomed out": the switches "Simplify cards" (§4.3) and "Merge relations" (§4.5);
+  - "Double-click": what a double-click on a card opens, the source file or the header;
   - the isolation depth;
   - "Show": filters by entity type (class, struct, union, enum, template) and display of external nodes (declarations without a definition); changing one computes the layout again (§4.4);
   - filters by namespace and by folder (check box trees with a text filter), which hide cards in place.
 - **Bottom left**: status (classes shown, level of detail, scan duration), the scan depth, which is a button to change it, and access to the scan report.
 - **Bottom right**: zoom controls (zoom out, zoom level, zoom in, fit) above the minimap, which shows the groups and a draggable viewport rectangle.
-- **Selection bar** (bottom center, only while classes are selected): display mode of the selection; for a single class, isolate and one button per file to open (header, source file); schema for a language model, sources as `.zip`, clear the selection.
+- **Right**, above the zoom controls, while it is open: the panel of the interface of the selection (§4.8).
+- **Selection bar** (bottom center, only while classes are selected): display mode of the selection; for a single class, isolate and one button per file to open (header, source file); interface of the selection (§4.8), schema for a language model, sources as `.zip`, clear the selection.
 
 "Fit" places the diagram in the part of the view that the floating panels leave free. Below 1280 px of width the controls of the top bars keep only their icon, and below 860 px so do the buttons.
 
@@ -293,13 +321,32 @@ The diagram fills the whole view; the user interface floats above it:
 
 Exports of the selected classes, from the "Export Diagram" command or the context menu:
 
-- **Schema for a language model**: compact text, close to C++ declarations, that can be pasted into a prompt. Classes are grouped by namespace, each with its bases, members, and file and line; the active relations follow, one line each (`A *-- B`, `A o-- B`, `A ..> B`...), split between relations inside the selection and relations leaving it. A legend at the top explains the notation. It is copied to the clipboard or saved as a Markdown file. The same schema can be exported for every visible class.
+- **Schema for a language model**: compact text, close to C++ declarations, that can be pasted into a prompt. Classes are grouped by namespace, each with its bases, members, and file and line; the active relations follow, one line each (`A *-- B`, `A o-- B`, `A ..> B`...), in three blocks: relations inside the selection, relations from the selection to classes outside of it, and relations from classes outside to the selection (among them `A --|> B` for a class outside that derives from a class of the selection). A legend at the top explains the notation. It is copied to the clipboard or saved as a Markdown file. The same schema can be exported for every visible class.
   - The size of a prompt matters, so the schema can be made lighter: all members, without private members, public members only, or no member at all (classes and relations only); and with or without the file and line of each class. When members are left out, the header of the schema says so.
   - The "LLM schema" button of the selection bar opens a panel with these two options and an estimate of the size in tokens (about one token for four characters), updated as the options change. The options are saved with the arrangement. The "Export Diagram" command asks for them.
 - **Sources as a `.zip` archive**, either keeping the folder tree of the scanned folder or flat (every file at the root; files with the same name get their folders in their name, `core/util.h` → `core_util.h`). The files of a class are:
   - the file that declares it;
   - the files that define its methods outside the class, found by the scan;
   - its companion files: files with the same name and another extension. Headers and sources are often kept in separate trees, so when several files have the right name, the one whose folders resemble most those of the file wins, counting the folders they have in common from the file upward: `inc/core/engine.h` goes with `src/core/engine.cpp` (mirror trees), and `include/myproject/engine.h` with `src/engine.cpp` (an extra folder level). Two files are companions only when each is the best match of the other; without any folder in common, a file is only taken when it is the only candidate.
+
+### 4.8 Interface of a selection
+
+The "Interface" button of the selection bar opens a panel that tells how the selected classes are interfaced with the rest of the code: everything that crosses the border of the selection, in two lists.
+
+| List | Content |
+|---|---|
+| Used by | The classes of the selection that the rest of the code uses, each with the uses of it by classes outside the selection |
+| Uses | The classes outside the selection that the selection uses, each with the uses of it by classes of the selection |
+
+- A use is one declaration of a relation (§3) or one method call (§3.1). Its line shows its kind (`Composition`, `Dependency`, `Call of add()`...), the class and the member that uses (`Renderer::render`), and the file and line. A click opens that line in the editor (§4.6).
+- A relation is a use of its target class by its source class. `friend` is the exception: the class that declares a friend opens itself to it, so the friend is the one that uses.
+- Relations and calls between two classes of the selection are its inside: they are not listed. The classes of the selection that nothing outside uses are named at the end of the "Used by" list.
+- Every relation type is listed, whether it is displayed or not, and every class counts, whether a filter hides it or not: a dependency does not disappear because its arrows are turned off. Forward-declared classes count too: they are the code outside the scanned folder.
+- Each list is grouped by the class that is used, sorted by name, with its number of uses. A class can be folded; the classes start folded when the list has more than 8 of them. A class shows at most 100 uses in the panel. A button next to each class moves the view to it.
+- The header of each list gives its totals: how many classes of the selection are used and by how many outside classes, or how many outside classes the selection uses.
+- "Copy" writes both lists as text to the clipboard, complete, one line per use with its file and line, to paste into a document or a prompt.
+- While the panel is open, the arrows of the selection are drawn differently: those that come in from the rest of the code in one color (the green of the theme charts), those that go out to it in another (orange), and the arrows between two selected classes are dimmed like the rest of the diagram. Only the relation types that are turned on have arrows. "Fit" leaves the panel free when the view is wide enough.
+- The panel follows the selection and is hidden while nothing is selected. The note at its bottom recalls that calls are found without a compiler.
 
 ## 5. Architecture
 
@@ -338,6 +385,7 @@ interface Graph {
                                 // or the parent of the scanned folder and its paired folder (§2.2)
   nodes: ClassNode[];
   edges: Edge[];
+  calls: MethodCall[];          // calls between classes (§3.1)
   files: string[];              // relative paths, referenced by index
 }
 
@@ -363,22 +411,35 @@ interface Member {
   signature: string;            // type, or parameters and return type
   visibility: 'public' | 'protected' | 'private';
   flags: number;                // static, virtual, pure, const
-  file: number; line: number;
+  file: number; line: number;   // the declaration, in the body of the class
+  definition?: SourceLocation;  // a method defined outside its class: where its code is (§4.6)
 }
 
 interface Edge {
   from: string; to: string;
   kind: 'inherit' | 'compose' | 'aggregate' | 'depend' | 'include' | 'friend' | 'nest';
-  file: number; line: number;                    // where the relation is declared (§4.6)
+  declarations: RelationDeclaration[];           // every line that declares the relation, never empty (§3);
+                                                 // a click on the arrow opens the first one (§4.6)
   access?: 'public' | 'protected' | 'private';   // inheritance
   multiplicity?: '1' | '*';                      // composition, aggregation
+}
+
+interface RelationDeclaration {
+  file: number; line: number;
+  member?: string;              // attribute or method of the source class that creates the relation
+}
+
+interface MethodCall {
+  from: string; fromMethod: string;   // the class and the method that make the call
+  to: string; method: string;         // the class of the object, and the called method
+  file: number; line: number;
 }
 ```
 
 ## 6. Persistence
 
 - File `.classscanner/<folder-name>-<short hash of the path>.json` at the workspace root, readable and suitable for version control.
-- Content: scan parameters (folder, depth), active layout and grouping criterion, positions per layout (indexed by qualified name), pinned display modes, collapsed groups, active relations, filters, the two zoom switches, camera.
+- Content: scan parameters (folder, depth), active layout and grouping criterion, positions per layout (indexed by qualified name), pinned display modes, collapsed groups, active relations, filters, the two zoom switches, what a double-click opens, camera.
 - After a rescan: known classes get their position back; new ones are placed near their group; entries of classes that disappeared are removed.
 - "Recompute layout" (§4.4) discards the manual positions of the current layout.
 - Outside of a workspace, the file is stored in the extension's global storage instead.
@@ -415,10 +476,10 @@ The measurements were made on the synthetic project of the test suite (`npm run 
 
 ## 9. Tests
 
-- **Unit tests** (`npm test`, vitest): a corpus of C++ files covering each construct (multiple inheritance, templates, nested classes, export macros, `#if`...) in `test/fixtures/constructs`, a small multi-file project in `test/fixtures/project`, a project with paired `inc` and `src` trees in `test/fixtures/paired`, and tests of name resolution, relations, card geometry, layouts, the webview store, the schema and the source file collection.
+- **Unit tests** (`npm test`, vitest): a corpus of C++ files covering each construct (multiple inheritance, templates, nested classes, export macros, `#if`...) in `test/fixtures/constructs`, a small multi-file project in `test/fixtures/project`, a project with paired `inc` and `src` trees in `test/fixtures/paired`, and tests of name resolution, relations, method calls, card geometry, layouts, the webview store, the interface of a selection, the schema and the source file collection.
 - **Integration tests** (`npm run test:integration`): run the extension in VS Code 1.130.0 (or another version with `--vscode-version`), scan the fixture project, check that the webview reports the diagram on screen without error, check the saved arrangement, and export PNG, SVG, schema and `.zip` files to `out/integration/`. They also scan one half of a pair of folders, and check that files opened from the diagram go to a single editor column, on the right of the diagram or on its left, and that opening a file twice shows a single editor. On the synthetic project they also measure frame times and relation toggle times.
 - **Benchmark** (`npm run benchmark`): scan and layout times on the synthetic project.
-- **Preview** (`npm run preview`): renders the webview in a headless browser, outside of VS Code, and saves a screenshot. Scenarios play user actions first (Ctrl+drag selection, wheel zoom, right-click, click, double-click and Alt+click on a card, hovering and clicking an arrow, dragging a card, Ctrl+Z, typing in the search box), which shows that these interactions work; the script prints the files that the scenario asked the editor to open.
+- **Preview** (`npm run preview`): renders the webview in a headless browser, outside of VS Code, and saves a screenshot. Scenarios play user actions first (Ctrl+drag selection, wheel zoom, right-click, click, double-click, Shift+double-click and Alt+double-click on a card, hovering and clicking an arrow, dragging a card, Ctrl+Z, typing in the search box, opening the interface of a selection), which shows that these interactions work; the script prints the files that the scenario asked the editor to open.
 - Not automated: assertions on mouse interactions, and validation on a real, large open-source project.
 
 ## 10. Milestones

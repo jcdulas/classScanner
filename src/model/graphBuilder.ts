@@ -5,15 +5,18 @@
 //      several `#if` branches, and its methods can be defined in .cpp files;
 //   2. create "external" nodes for classes that are only forward-declared;
 //   3. resolve every type name and create the edges of the seven relation kinds;
-//   4. find the file that implements each class, when it is not the file that declares it.
+//   4. find the file that implements each class, when it is not the file that declares it;
+//   5. find the class that each method call goes to (callResolver.ts).
 
 import { BodyTypeReference, LookupScope, OutOfClassMethod, TypeDeclaration, FileSymbols, TypeExpression } from '../parser/fileSymbols';
 import { collectTypeNames } from '../parser/typeReader';
 import { ClassNode, Graph, Member, MemberFlags, SourceLocation } from '../shared/graphModel';
+import { CallResolver, MethodCode } from './callResolver';
 import { EdgeCollector } from './edgeCollector';
 import { ImplementationFinder } from './implementationFinder';
 import { IncludeResolver } from './includeResolver';
 import { MemberRelationClassifier } from './memberRelations';
+import { MethodDefinitions } from './methodDefinitions';
 import { TypeResolver } from './typeResolver';
 
 export interface GraphBuildResult {
@@ -42,7 +45,11 @@ class GraphBuilder {
   private readonly declaredClassIdsByFile = new Map<string, Set<string>>();
   /** For each class, the files that define its methods outside of it, with the line of the first one. */
   private readonly definitionLinesById = new Map<string, Map<number, number>>();
+  /** Gives each method defined outside its class the place of its code (methodDefinitions.ts). */
+  private readonly methodDefinitions = new MethodDefinitions();
   private readonly edges = new EdgeCollector();
+  /** The methods that have code, for the search of their calls once every relation is known. */
+  private readonly methodCodes: MethodCode[] = [];
   private readonly unresolvedTypeNames = new Map<string, number>();
   private resolver!: TypeResolver;
   private classifier!: MemberRelationClassifier;
@@ -80,10 +87,13 @@ class GraphBuilder {
       this.countUnresolved(name);
     }
 
+    const edges = this.edges.toEdges();
+    const callResolver = new CallResolver(this.nodesById, this.resolver, this.attributeTypesByClass(), edges);
     const graph: Graph = {
       root: this.root,
       nodes: Array.from(this.nodesById.values()),
-      edges: this.edges.toEdges(),
+      edges,
+      calls: callResolver.resolve(this.methodCodes),
       files: this.fileSymbolsList.map((symbols) => symbols.file),
     };
     return { graph, unresolvedTypeNames: this.unresolvedTypeNames };
@@ -161,7 +171,9 @@ class GraphBuilder {
         file: fileIndex,
         line: method.line,
       };
-      addIfUnknown(node.methods, member, known);
+      if (addIfUnknown(node.methods, member, known)) {
+        this.methodDefinitions.addDeclaredMethod(node.id, member, method.signatureTypes);
+      }
     }
     node.isAbstract = node.methods.some((method) => (method.flags & MemberFlags.PureVirtual) !== 0);
   }
@@ -218,12 +230,16 @@ class GraphBuilder {
       }
     }
     for (const attribute of declaration.attributes) {
+      const attributeDeclaration = { file, line: attribute.line, member: attribute.name };
       for (const relation of this.classifier.classify(attribute.type, scope, usingNamespaces)) {
-        this.edges.add(id, relation.targetId, relation.kind, { file, line: attribute.line }, { multiplicity: relation.multiplicity });
+        this.edges.add(id, relation.targetId, relation.kind, attributeDeclaration, { multiplicity: relation.multiplicity });
       }
     }
     for (const method of declaration.methods) {
-      this.addDependencies(id, { file, line: method.line }, method.signatureTypes, method.bodyReferences, scope, usingNamespaces);
+      this.addDependencies(id, method.name, { file, line: method.line }, method.signatureTypes, method.bodyReferences, scope, usingNamespaces);
+      if (method.calls.length > 0) {
+        this.methodCodes.push({ classId: id, methodName: method.name, file, calls: method.calls, scope, usingNamespaces });
+      }
     }
     for (const friend of declaration.friends) {
       const friendId = this.resolveClass(friend.name, scope, usingNamespaces);
@@ -254,7 +270,12 @@ class GraphBuilder {
     // Inside `Engine::run`, names are looked up in the scope of class Engine first.
     const ownerScope = this.scopeOfClass(ownerId, method.scope.templateParameters);
     const methodLocation = { file: fileIndex, line: method.line };
-    this.addDependencies(ownerId, methodLocation, method.signatureTypes, method.bodyReferences, ownerScope, fileSymbols.usingNamespaces);
+    this.methodDefinitions.addDefinition(ownerId, method.name, method.signatureTypes, methodLocation);
+    const usingNamespaces = fileSymbols.usingNamespaces;
+    this.addDependencies(ownerId, method.name, methodLocation, method.signatureTypes, method.bodyReferences, ownerScope, usingNamespaces);
+    if (method.calls.length > 0) {
+      this.methodCodes.push({ classId: ownerId, methodName: method.name, file: fileIndex, calls: method.calls, scope: ownerScope, usingNamespaces });
+    }
   }
 
   /**
@@ -263,6 +284,7 @@ class GraphBuilder {
    */
   private addDependencies(
     fromId: string,
+    methodName: string,
     methodLocation: SourceLocation,
     signatureTypes: TypeExpression[],
     bodyReferences: BodyTypeReference[],
@@ -272,7 +294,7 @@ class GraphBuilder {
     const signatureReferences = signatureTypes.flatMap(collectTypeNames).map((name) => ({ name, line: methodLocation.line }));
     for (const reference of [...signatureReferences, ...bodyReferences]) {
       for (const targetId of this.resolveDependencyTargets(reference.name, scope, usingNamespaces)) {
-        this.edges.add(fromId, targetId, 'depend', { file: methodLocation.file, line: reference.line });
+        this.edges.add(fromId, targetId, 'depend', { file: methodLocation.file, line: reference.line, member: methodName });
       }
     }
   }
@@ -363,6 +385,23 @@ class GraphBuilder {
     }
   }
 
+  // ---- Step 4: method calls ----
+
+  /** The type of each attribute of each class, by name: a call on an attribute goes to the class of its type. */
+  private attributeTypesByClass(): Map<string, Map<string, TypeExpression>> {
+    const typesByClass = new Map<string, Map<string, TypeExpression>>();
+    for (const [id, declarations] of this.declarationsById) {
+      const types = new Map<string, TypeExpression>();
+      for (const located of declarations) {
+        for (const attribute of located.declaration.attributes) {
+          types.set(attribute.name, attribute.type);
+        }
+      }
+      typesByClass.set(id, types);
+    }
+    return typesByClass;
+  }
+
   // ---- Helpers ----
 
   private resolveClass(name: string, scope: LookupScope, usingNamespaces: string[]): string | undefined {
@@ -398,12 +437,15 @@ function memberKey(member: Member): string {
   return `${member.name}|${member.signature}`;
 }
 
-function addIfUnknown(members: Member[], member: Member, known: Set<string>): void {
+/** Returns whether the member was added. */
+function addIfUnknown(members: Member[], member: Member, known: Set<string>): boolean {
   const key = memberKey(member);
-  if (!known.has(key)) {
-    known.add(key);
-    members.push(member);
+  if (known.has(key)) {
+    return false;
   }
+  known.add(key);
+  members.push(member);
+  return true;
 }
 
 function addUnique(values: string[], value: string): void {

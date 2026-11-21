@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { ClassNode, Graph, Member } from '../../shared/graphModel';
 import { DiagramController } from '../controller';
+import { codeLocationOf } from '../model/openTargets';
 import { Icon } from './Icon';
 
 const MAX_CLASS_RESULTS = 20;
@@ -64,7 +65,8 @@ export function SearchBox({ controller }: SearchBoxProps) {
   };
 
   const openInEditor = (result: SearchResult) => {
-    const location = result.member ?? result.node;
+    // The same side as a double-click on the card: the definition or the declaration (spec §4.6).
+    const location = codeLocationOf(result.node, result.member, store.doubleClickOpens);
     controller.openSource(location.file, location.line);
     close();
   };

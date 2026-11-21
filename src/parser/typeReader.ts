@@ -62,6 +62,30 @@ export function innerDeclarator(declaratorNode: SyntaxNode): SyntaxNode | null {
   return null;
 }
 
+/** The declared name at the bottom of a declarator chain: `count`, `~Shape`, `operator=`, `Engine::run`. */
+export function readDeclaratorName(declarator: SyntaxNode | null): string {
+  let current = declarator;
+  while (current !== null) {
+    switch (current.type) {
+      case 'identifier':
+      case 'field_identifier':
+      case 'type_identifier':
+      case 'destructor_name':
+      case 'operator_name':
+      case 'qualified_identifier':
+      case 'template_function':
+      case 'operator_cast':
+        return normalizeWhitespace(current.text);
+    }
+    const inner: SyntaxNode | null = innerDeclarator(current) ?? current.lastNamedChild;
+    if (inner === null || inner.id === current.id) {
+      return normalizeWhitespace(current.text);
+    }
+    current = inner;
+  }
+  return '';
+}
+
 /** Every type name in an expression, including the ones in template arguments. */
 export function collectTypeNames(expression: TypeExpression): string[] {
   const names: string[] = [];

@@ -11,9 +11,10 @@
 
 import { MemberFlags, Visibility } from '../shared/graphModel';
 import { collectBodyTypeReferences } from './bodyReferences';
+import { collectCallReferences } from './callReferences';
 import { RawAttribute, RawMethod, TypeExpression } from './fileSymbols';
 import { SyntaxNode, hasChildOfType, hasChildWithText, lineOf, normalizeWhitespace } from './syntaxHelpers';
-import { innerDeclarator, readTypeExpression, readTypeText } from './typeReader';
+import { innerDeclarator, readDeclaratorName, readTypeExpression, readTypeText } from './typeReader';
 
 const PARAMETER_TYPES = new Set([
   'parameter_declaration',
@@ -133,30 +134,6 @@ function readAttributeTypeText(typeNode: SyntaxNode, declarator: SyntaxNode, isC
   return `${readTypeText(typeNode, null, isConstType)} (*)${parametersText}`;
 }
 
-/** The declared name at the bottom of a declarator chain: `count`, `~Shape`, `operator=`, `Engine::run`. */
-export function readDeclaratorName(declarator: SyntaxNode | null): string {
-  let current = declarator;
-  while (current !== null) {
-    switch (current.type) {
-      case 'identifier':
-      case 'field_identifier':
-      case 'type_identifier':
-      case 'destructor_name':
-      case 'operator_name':
-      case 'qualified_identifier':
-      case 'template_function':
-      case 'operator_cast':
-        return normalizeWhitespace(current.text);
-    }
-    const inner: SyntaxNode | null = innerDeclarator(current) ?? current.lastNamedChild;
-    if (inner === null || inner.id === current.id) {
-      return normalizeWhitespace(current.text);
-    }
-    current = inner;
-  }
-  return '';
-}
-
 /** The types of the parameters of a function declarator. */
 export function readParameterTypes(functionDeclarator: SyntaxNode): TypeExpression[] {
   const parameterList = functionDeclarator.childForFieldName('parameters');
@@ -217,5 +194,6 @@ function buildMethod(parts: MethodParts): RawMethod {
     line: lineOf(functionDeclarator),
     signatureTypes,
     bodyReferences: collectBodyTypeReferences(parts.bodyNodes),
+    calls: collectCallReferences(functionDeclarator, parts.bodyNodes),
   };
 }

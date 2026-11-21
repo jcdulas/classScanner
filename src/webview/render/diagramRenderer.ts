@@ -127,7 +127,7 @@ export class DiagramRenderer {
       camera: this.camera,
       hitTest: (point) => this.spatialIndex.hitTest(point)?.target,
       rowAt: (cardId, point) => this.rowAt(cardId, point),
-      relationDeclarationAt: (point) => this.routeAt(point)?.edge,
+      relationDeclarationAt: (point) => this.routeAt(point)?.edge.declarations[0],
       openSource: (file, line) => callbacks.openSource(file, line),
       idsInRect: (rect) => this.cardIdsInRect(rect),
       groupMemberIds: (key) => this.groupBoxes.get(key)?.memberIds ?? [],
@@ -486,7 +486,7 @@ export class DiagramRenderer {
 
   private rebuildHighlight(): void {
     const selection = this.store.selection;
-    this.edgeLayer.rebuildHighlight(selection, this.store.activeRelations, this.theme, this.edgeBuildScale);
+    this.edgeLayer.rebuildHighlight(selection, this.store.activeRelations, this.theme, this.edgeBuildScale, this.store.showsSelectionInterface);
     this.edgeLayer.setDimmed(selection.size > 0);
   }
 
@@ -660,9 +660,11 @@ export class DiagramRenderer {
   /** For the tooltip of an arrow: `Composition: Engine → Timer · click to open engine.h:12`. */
   private relationText(edge: Edge): string {
     const nameOf = (id: string) => this.store.nodeById.get(id)?.name ?? id;
-    const filePath = this.store.graph?.files[edge.file] ?? '';
+    // A click opens the first declaration of the relation.
+    const declaration = edge.declarations[0];
+    const filePath = this.store.graph?.files[declaration.file] ?? '';
     const fileName = filePath.slice(filePath.lastIndexOf('/') + 1);
-    return `${RELATION_LABELS[edge.kind]}: ${nameOf(edge.from)} \u2192 ${nameOf(edge.to)} \u00b7 click to open ${fileName}:${edge.line}`;
+    return `${RELATION_LABELS[edge.kind]}: ${nameOf(edge.from)} \u2192 ${nameOf(edge.to)} \u00b7 click to open ${fileName}:${declaration.line}`;
   }
 
   private aggregatedLinkTextAt(world: Point): string | undefined {
@@ -709,10 +711,13 @@ export class DiagramRenderer {
 
   /**
    * The parts of the view covered by the floating panels, which "fit to view" must avoid.
-   * These sizes match the layout of styles.css: top bars, side panel, bottom pills and minimap.
+   * These sizes match the layout of styles.css: top bars, side panel, interface panel, bottom pills and minimap.
    */
   private viewInsets(): ViewInsets {
-    return { left: this.store.isSidePanelOpen ? 296 : 24, top: 72, right: 24, bottom: 64 };
+    // In a narrow view the side panel and the interface panel leave no room between them:
+    // the interface panel, which is the one opened for a short time, is then ignored.
+    const isInterfacePanelShown = this.store.showsSelectionInterface && this.camera.viewWidth > 900;
+    return { left: this.store.isSidePanelOpen ? 296 : 24, top: 72, right: isInterfacePanelShown ? 408 : 24, bottom: 64 };
   }
 
   private shownBounds(): Rect | undefined {

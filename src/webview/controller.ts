@@ -3,10 +3,12 @@
 
 import { ExportFormat, ExportScope, HostToWebviewMessage } from '../shared/messages';
 import { SchemaDetail } from '../shared/savedState';
+import { buildInterfaceText } from './export/interfaceText';
 import { buildLlmSchema, estimateTokenCount } from './export/llmSchema';
 import { buildSvg } from './export/svgExport';
 import { HostConnection } from './hostConnection';
 import { FontMetrics } from './model/cardGeometry';
+import { computeSelectionInterface } from './model/selectionInterface';
 import { DiagramRenderer } from './render/diagramRenderer';
 import { readTheme } from './render/theme';
 import { DiagramStore } from './state/diagramStore';
@@ -70,6 +72,22 @@ export class DiagramController {
   focusNode(id: string): void {
     this.store.select([id], 'replace');
     this.renderer?.focusNode(id);
+  }
+
+  /** Moves the view to a class without selecting it. */
+  revealNode(id: string): void {
+    this.renderer?.focusNode(id);
+  }
+
+  /** Copies the interface of the selected classes with the rest of the code, as text, to the clipboard (spec §4.8). */
+  copySelectionInterface(): void {
+    const graph = this.store.graph;
+    const selection = this.store.selection;
+    if (graph === undefined || selection.size === 0) {
+      return;
+    }
+    const text = buildInterfaceText(graph, selection, computeSelectionInterface(graph, selection), this.projectName(graph.root));
+    this.host.post({ type: 'copyToClipboard', text, description: `Interface of ${selection.size} ${selection.size === 1 ? 'class' : 'classes'}` });
   }
 
   /** Copies the schema of the selected classes, for a language model, to the clipboard. */
@@ -165,10 +183,13 @@ export class DiagramController {
     if (ids.length === 0) {
       throw new Error(scope === 'selection' ? 'No class is selected.' : 'No class is visible.');
     }
-    // The name of the folder the user scanned; the root of the graph can be its parent (spec §2.2).
-    const scannedFolder = this.store.report?.folder ?? graph.root;
-    const projectName = scannedFolder.split(/[\\/]/).filter((part) => part !== '').pop() ?? scannedFolder;
-    return buildLlmSchema(graph, ids, { projectName, relationKinds: this.store.activeRelations, detail });
+    return buildLlmSchema(graph, ids, { projectName: this.projectName(graph.root), relationKinds: this.store.activeRelations, detail });
+  }
+
+  /** The name of the folder the user scanned; the root of the graph can be its parent (spec §2.2). */
+  private projectName(graphRoot: string): string {
+    const scannedFolder = this.store.report?.folder ?? graphRoot;
+    return scannedFolder.split(/[\\/]/).filter((part) => part !== '').pop() ?? scannedFolder;
   }
 
   // ---- Persistence ----

@@ -2,8 +2,8 @@
 // interface without starting VS Code. Run `npm run build` first.
 //
 // Usage: node scripts/previewWebview.mjs [--theme dark|light]
-//        [--scenario default|selection|zoom|menu|menuAt|zoomAt|click|hover|doubleClick|drag|multiDrag|ctrlClickTwice|schemaPanel|search|toggleRow]
-//        [--x 0.5 --y 0.5] [--undo 1] [--text area] [--alt 1] [--count 2]
+//        [--scenario default|selection|zoom|menu|menuAt|zoomAt|click|hover|doubleClick|drag|multiDrag|ctrlClickTwice|schemaPanel|interfacePanel|search|toggleRow]
+//        [--x 0.5 --y 0.5] [--undo 1] [--text area] [--alt 1] [--shift 1] [--count 2]
 //        [--folder test/fixtures/project] [--relations all|inherit,compose] [--size 1500x950] [--pixel-ratio 2]
 //        [--output out/preview/preview.png] [--state '{"simplifyCardsWhenZoomedOut":false}']
 //
@@ -195,6 +195,7 @@ try {
     undo: option('undo', '0'),
     text: option('text', ''),
     alt: option('alt', '0'),
+    shift: option('shift', '0'),
     count: option('count', '1'),
   });
   await takeScreenshot(`http://127.0.0.1:${address.port}/?${query}`);

@@ -2,6 +2,7 @@
 
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { Graph } from '../../src/shared/graphModel';
 import {
   FIXTURES_DIRECTORY,
   buildGraphFromSources,
@@ -12,6 +13,16 @@ import {
 } from './testHelpers';
 
 const PROJECT_FOLDER = path.join(FIXTURES_DIRECTORY, 'project');
+
+/** The methods of a class as `name: file:line`, followed by `, defined file:line` when they are defined elsewhere. */
+function describeMethodPlaces(graph: Graph, classId: string): string[] {
+  const node = graph.nodes.find((candidate) => candidate.id === classId)!;
+  return node.methods.map((method) => {
+    const definition = method.definition;
+    const definedAt = definition === undefined ? '' : `, defined ${graph.files[definition.file]}:${definition.line}`;
+    return `${method.name}: ${graph.files[method.file]}:${method.line}${definedAt}`;
+  });
+}
 
 describe('fixture project', () => {
   it('finds every class, with nested and forward-declared ones', async () => {
@@ -119,6 +130,52 @@ describe('fixture project', () => {
     expect(describeEdgeLocations(graph)).toEqual([
       'inherit Derived -> First: derived.h:4',
       'inherit Derived -> Second: derived.h:5',
+    ]);
+  });
+
+  it('records where each method is defined, when that is outside its class', async () => {
+    const { graph } = await scanTestFolder(PROJECT_FOLDER);
+    expect(describeMethodPlaces(graph, 'geo::Scene')).toEqual([
+      'add: include/geometry/scene.h:12, defined src/scene.cpp:6',
+      'activeLayer: include/geometry/scene.h:13, defined src/scene.cpp:12',
+    ]);
+    // A method without code in the scanned files has no definition.
+    expect(describeMethodPlaces(graph, 'geo::Shape')).toContain('area: include/geometry/shape.h:18');
+  });
+
+  it('gives each overload its own definition', async () => {
+    const graph = await buildGraphFromSources({
+      'buffer.h': [
+        'namespace io {',
+        'class Buffer {',
+        ' public:',
+        '  struct Item {};',
+        '  void write(int value);',
+        '  void write(const Item& item);',
+        '  Item* begin();',
+        '  const Item* begin() const;',
+        '  void clear() {}',
+        '};',
+        '}',
+      ].join('\n'),
+      'buffer.cpp': [
+        'namespace io {',
+        // The definition names the nested type with its class, the declaration does not.
+        'void Buffer::write(const Buffer::Item& item) {}',
+        'void Buffer::write(int value) {}',
+        // Same types for both: taken in the order of the class.
+        'Buffer::Item* Buffer::begin() { return nullptr; }',
+        'const Buffer::Item* Buffer::begin() const { return nullptr; }',
+        '}',
+      ].join('\n'),
+    });
+    expect(describeMethodPlaces(graph, 'io::Buffer')).toEqual([
+      'write: buffer.h:5, defined buffer.cpp:3',
+      'write: buffer.h:6, defined buffer.cpp:2',
+      'begin: buffer.h:7, defined buffer.cpp:4',
+      'begin: buffer.h:8, defined buffer.cpp:5',
+      // Written in the body of the class: its declaration is its definition.
+      'clear: buffer.h:9',
     ]);
   });
 

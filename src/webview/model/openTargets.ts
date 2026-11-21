@@ -2,8 +2,12 @@
 // that declares it, usually a header, and the file that implements it, usually
 // a .cpp, when the scan found one. The selection bar and the context menu show
 // one entry per file, so that the user chooses which one to open.
+//
+// A double-click on a card, and a search result, open one of the two places
+// without asking: `codeLocationOf` gives the place for the side that the user
+// prefers, the declaration or the definition.
 
-import { ClassNode, isHeaderFile } from '../../shared/graphModel';
+import { ClassNode, CodeSide, Member, SourceLocation, isHeaderFile } from '../../shared/graphModel';
 
 export interface OpenTarget {
   /** File name without its folders, shown on the control: `engine.h`. */
@@ -40,6 +44,24 @@ export function openTargetsOf(node: ClassNode, files: string[]): OpenTarget[] {
     });
   }
   return targets;
+}
+
+/**
+ * Where to open a class, or one of its members when `member` is given, on the asked side.
+ * What has no definition of its own opens at its declaration: an attribute, a method written
+ * in the body of its class, a class that lives in a single file.
+ */
+export function codeLocationOf(node: ClassNode, member: Member | undefined, side: CodeSide): SourceLocation {
+  const declaration = member ?? node;
+  const definition = member === undefined ? node.implementation : member.definition;
+  if (side === 'definition' && definition !== undefined) {
+    return definition;
+  }
+  return { file: declaration.file, line: declaration.line };
+}
+
+export function otherCodeSide(side: CodeSide): CodeSide {
+  return side === 'definition' ? 'declaration' : 'definition';
 }
 
 function fileNameOf(path: string): string {

@@ -30,7 +30,11 @@ Seven kinds of relations, each with its own switch and its UML notation: inherit
 
 ### Your code, read as it is
 
-Classes, structs, unions, enums and templates, with their members, visibility, and `static`, `virtual`, `const` and pure virtual markers. Methods are marked with a diamond and attributes with a circle, colored by visibility: green for public, yellow for protected, red for private. Open a class in its header or in its source file from the selection bar, and Alt + click a member to jump to its declaration.
+Classes, structs, unions, enums and templates, with their members, visibility, and `static`, `virtual`, `const` and pure virtual markers. Methods are marked with a diamond and attributes with a circle, colored by visibility: green for public, yellow for protected, red for private. Double-click a class or a member to open its code: the `.cpp` file by default, the header with Shift.
+
+### How a piece of code is wired to the rest
+
+Select a few classes and open their **Interface**: what the rest of the code uses of them, and what they use of the rest, down to the attribute, the method and the call that does it. Each line opens in the editor.
 
 ### Layouts you can shape
 
@@ -42,6 +46,7 @@ Select classes and take them elsewhere:
 
 - **PNG or SVG** images of the view, the whole diagram or the selection.
 - **A compact schema for an LLM**, ready to paste into a prompt.
+- **Their interface with the rest of the code**, as a list or as text.
 - **A `.zip` of their source files**, headers and `.cpp` together.
 
 ![The selection bar, light theme](docs/images/selection.png)
@@ -56,10 +61,11 @@ Select classes and take them elsewhere:
 | Ctrl + click a card (Cmd on macOS) | Add it to the selection, or remove it; Shift + click does the same |
 | Ctrl + drag (Cmd on macOS) | Select the cards in a rectangle; with Shift, add them to the selection |
 | Drag a card or a group title | Move it; dragging a selected card moves the whole selection |
-| Alt + click a member line | Open the member's declaration |
-| Alt + click a card, elsewhere | Open the class declaration |
+| Double-click a member line | Open the member in the source file (`.cpp`): the code of a method |
+| Double-click a card, elsewhere | Open the class in its source file |
+| Shift + double-click | The same in the header: the declaration. The side panel can swap the two |
 | Click an arrow | Open the line that declares the relation: the base class, the attribute, the method or the code that uses the other class, the `#include`, the `friend` declaration |
-| Double-click a card | Cycle its display mode: auto, full, compact |
+| Alt + double-click a card | Cycle its display mode: auto, full, compact |
 | Double-click a group title | Collapse or expand the group |
 | Right-click | Display modes, isolate, open the header or the source file, go to the member under the pointer, exports, collapse the group |
 | Ctrl + F | Search a class, a method or an attribute |
@@ -71,7 +77,7 @@ The controls float above the diagram:
 - **Top left**: show or hide the side panel, search, undo and redo.
 - **Top center**: the layout, the grouping, **Recompute layout**, and the display mode of every card (auto follows the zoom, compact shows names only, full shows all members).
 - **Top right**: rescan and export.
-- **Side panel**: a switch per relation kind, what changes when zoomed out, the isolation depth, and filters by kind, namespace and folder.
+- **Side panel**: a switch per relation kind, what changes when zoomed out, what a double-click opens (source file or header), the isolation depth, and filters by kind, namespace and folder.
 - **Bottom**: the status, the scan depth and the scan report on the left, zoom controls and the minimap on the right.
 - **Selection bar**: appears while classes are selected, with the actions that apply to them. For a single class it has one button per file, such as `engine.h` and `engine.cpp`: choose which one to open.
 
@@ -88,9 +94,27 @@ Two switches of the side panel, under **Zoomed out**, set what happens when you 
 
 While a diagram is open, saving a C++ file of its folder (or of its paired folder) scans it again: the diagram follows your code, and keeps its arrangement. The depth of a folder is asked the first time only; click **Depth** in the status to change it.
 
+### Interface of a selection
+
+The **Interface** button of the selection bar opens a panel that lists everything that crosses the border of the selected classes:
+
+- **Used by**: the classes of the selection that the rest of the code uses. Under each one, who uses it and how: a class that derives from it, an attribute that holds it, a method that takes it as a parameter or uses it in its code, a method that calls one of its methods.
+- **Uses**: the classes outside the selection that the selection needs, with the same detail.
+
+Click a line to open it in the editor, and the target next to a class to see it in the diagram. **Copy** puts both lists on the clipboard as text. While the panel is open, the arrows that enter the selection are green and those that leave it are orange.
+
+```text
+used by the rest of the code: 1 of 2 classes, used by 2 classes
+  geo::Scene
+    aggregation    geo::Layer::owner  [include/geometry/scene.h:30]
+    call of add()  geo::Renderer::render  [src/renderer.cpp:12]
+```
+
+Every relation kind is listed, even those whose arrows are turned off. Method calls are found without a compiler, from the declared types of parameters, local variables and attributes: a call that is listed is right most of the time, but some calls are missed, for example on a variable declared with `auto`.
+
 ### Schema for an LLM
 
-The **LLM schema** button of the selection bar copies a compact description of the selected classes to the clipboard: classes by namespace with their bases, members and file locations, then the relations that are turned on, with a legend.
+The **LLM schema** button of the selection bar copies a compact description of the selected classes to the clipboard: classes by namespace with their bases, members and file locations, then the relations that are turned on, with a legend. The relations with classes outside the selection are listed apart, in both directions.
 
 Because the size of a prompt matters, the button first shows two options and an estimate of the size in tokens: which members to list (all, without the private ones, public only, or none) and whether to write the file locations.
 

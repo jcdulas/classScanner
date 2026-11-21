@@ -1,15 +1,21 @@
-// The floating side panel (spec §4.6): relation toggles, isolation depth and filters,
-// in sections that can be folded.
+// The floating side panel (spec §4.6): relation toggles, zoom options, what a double-click
+// opens, isolation depth and filters, in sections that can be folded.
 
 import { useMemo } from 'preact/hooks';
-import { ALL_RELATION_KINDS, RelationKind } from '../../shared/graphModel';
+import { ALL_RELATION_KINDS, CodeSide, RelationKind } from '../../shared/graphModel';
 import { DiagramController } from '../controller';
 import { folderOf } from '../model/groups';
 import { readTheme, toCssColor } from '../render/theme';
-import { GlassButton, Section, Stepper, ToggleRow } from './controls';
+import { GlassButton, Section, Segmented, SegmentOption, Stepper, ToggleRow } from './controls';
 import { ENTITY_KIND_LABELS, RELATION_LABELS } from './labels';
 import { FilterList } from './FilterList';
 import { useStore } from './useStore';
+
+/** What a double-click on a card opens (spec §4.6). */
+const CODE_SIDE_OPTIONS: SegmentOption[] = [
+  { value: 'definition', label: 'Source', title: 'The definition: the code of a method, usually in a .cpp file' },
+  { value: 'declaration', label: 'Header', title: 'The declaration, in the body of the class, usually in a header' },
+];
 
 interface SidePanelProps {
   controller: DiagramController;
@@ -75,6 +81,14 @@ export function SidePanel({ controller }: SidePanelProps) {
         {!store.simplifyCardsWhenZoomedOut && (
           <div class="hint">Cards keep their full layout at every zoom level. Their text is drawn once it is large enough to see.</div>
         )}
+      </Section>
+
+      <Section title="Double-click" summary={store.doubleClickOpens === 'definition' ? 'source file' : 'header'}>
+        <div class="inline-setting">
+          <span>Opens</span>
+          <Segmented options={CODE_SIDE_OPTIONS} value={store.doubleClickOpens} onChange={(side) => store.setDoubleClickOpens(side as CodeSide)} />
+        </div>
+        <div class="hint">Double-click a class or a member to open its code. Shift + double-click opens the other file.</div>
       </Section>
 
       <Section title="Isolation" summary={isolatedName}>

@@ -77,6 +77,7 @@ export async function scanFolder(request: ScanRequest): Promise<ScanResult> {
       .slice(0, TOP_UNRESOLVED_NAME_COUNT),
     nodeCount: graph.nodes.length,
     edgeCounts: countEdgesByKind(graph),
+    methodCallCount: graph.calls.length,
   };
   return { graph, report };
 }

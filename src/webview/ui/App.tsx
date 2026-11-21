@@ -7,6 +7,7 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { DiagramController } from '../controller';
 import { ContextMenu } from './ContextMenu';
+import { InterfacePanel } from './InterfacePanel';
 import { SelectionBar } from './SelectionBar';
 import { SidePanel } from './SidePanel';
 import { PhaseOverlay, StatusPill, ZoomControls } from './StatusBar';
@@ -67,6 +68,7 @@ export function App({ controller }: AppProps) {
       {store.isSidePanelOpen && <SidePanel controller={controller} />}
       <StatusPill controller={controller} />
       <SelectionBar controller={controller} />
+      <InterfacePanel controller={controller} />
       <ZoomControls controller={controller} />
       <ContextMenu controller={controller} />
     </div>

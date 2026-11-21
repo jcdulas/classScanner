@@ -167,10 +167,11 @@ describe('visibility and isolation', () => {
       makeNode('Fwd', { isExternal: true }),
     ],
     edges: [
-      { from: 'app::B', to: 'app::A', kind: 'inherit', file: 0, line: 1 },
-      { from: 'lib::C', to: 'app::B', kind: 'compose', file: 1, line: 1 },
-      { from: 'lib::D', to: 'lib::C', kind: 'depend', file: 1, line: 1 },
+      { from: 'app::B', to: 'app::A', kind: 'inherit', declarations: [{ file: 0, line: 1 }] },
+      { from: 'lib::C', to: 'app::B', kind: 'compose', declarations: [{ file: 1, line: 1 }] },
+      { from: 'lib::D', to: 'lib::C', kind: 'depend', declarations: [{ file: 1, line: 1 }] },
     ] satisfies Edge[],
+    calls: [],
   };
   const filters = createDefaultState().filters;
 
@@ -279,7 +280,7 @@ describe('edge geometry', () => {
 
 describe('edge under the pointer', () => {
   const makeRoute = (from: string, points: { x: number; y: number }[]): RoutedEdge => ({
-    edge: { from, to: 'Target', kind: 'inherit', file: 0, line: 1 },
+    edge: { from, to: 'Target', kind: 'inherit', declarations: [{ file: 0, line: 1 }] },
     points,
   });
   // An elbow going right then down, and a horizontal line 10 units under its first segment.

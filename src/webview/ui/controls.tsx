@@ -182,6 +182,24 @@ export function ToggleRow({ isOn, onToggle, children, kind, title, indent = 0 }:
   );
 }
 
+interface PressableRowProps {
+  className: string;
+  title: string;
+  onPress: () => void;
+  /** For a row that folds what follows it: whether that part is shown. */
+  isExpanded?: boolean;
+  children: ComponentChildren;
+}
+
+/** A row of a list that does something when pressed, like a button as wide as the list. */
+export function PressableRow({ className, title, onPress, isExpanded, children }: PressableRowProps) {
+  return (
+    <div role="button" aria-expanded={isExpanded} class={className} title={title} {...pressHandlers(onPress)}>
+      {children}
+    </div>
+  );
+}
+
 interface StepperProps {
   value: number;
   minimum: number;

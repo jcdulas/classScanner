@@ -8,6 +8,7 @@
 
 import { EntityKind, Visibility } from '../shared/graphModel';
 import { collectBodyTypeReferences } from './bodyReferences';
+import { collectCallReferences } from './callReferences';
 import {
   BaseClass,
   FileSymbols,
@@ -19,7 +20,6 @@ import {
 } from './fileSymbols';
 import {
   findFunctionDeclarator,
-  readDeclaratorName,
   readFunctionBodyNodes,
   readInlineMethod,
   readMemberDeclaration,
@@ -33,7 +33,7 @@ import {
   lineOf,
   normalizeWhitespace,
 } from './syntaxHelpers';
-import { readQualifiedName, readTypeExpression } from './typeReader';
+import { readDeclaratorName, readQualifiedName, readTypeExpression } from './typeReader';
 
 const ENTITY_KIND_BY_NODE_TYPE: Record<string, EntityKind> = {
   class_specifier: 'class',
@@ -353,11 +353,14 @@ class DeclarationExtractor {
     if (returnTypeNode !== null) {
       signatureTypes.push(readTypeExpression(returnTypeNode, declarator));
     }
+    const bodyNodes = readFunctionBodyNodes(node);
     const method: OutOfClassMethod = {
       ownerName: qualifiedMethodName.slice(0, ownerEnd),
+      name: qualifiedMethodName.slice(ownerEnd + 2),
       scope,
       signatureTypes,
-      bodyReferences: collectBodyTypeReferences(readFunctionBodyNodes(node)),
+      bodyReferences: collectBodyTypeReferences(bodyNodes),
+      calls: collectCallReferences(functionDeclarator, bodyNodes),
       line: lineOf(node),
     };
     this.symbols.outOfClassMethods.push(method);

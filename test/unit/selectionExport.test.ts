@@ -31,6 +31,7 @@ describe('source files of classes', () => {
     files: ['inc/core/engine.h', 'inc/core/util.h', 'inc/net/util.h', 'src/core/engine.cpp', 'src/core/util.cpp', 'src/net/socket.cpp', 'src/main.cpp'],
     nodes: [makeNode('Engine', 0), makeNode('CoreUtil', 1), makeNode('NetUtil', 2, [5])],
     edges: [],
+    calls: [],
   };
 
   it('finds the .cpp file in a mirror tree under another top folder', () => {
@@ -55,7 +56,7 @@ describe('source files of classes', () => {
     expect(collectSourceFiles(sideBySide, ['Engine'])).toEqual(['core/engine.cpp', 'core/engine.h']);
   });
 
-  const graphOf = (files: string[]): Graph => ({ root: '/project', files, nodes: [makeNode('Engine', 0)], edges: [] });
+  const graphOf = (files: string[]): Graph => ({ root: '/project', files, nodes: [makeNode('Engine', 0)], edges: [], calls: [] });
 
   it('finds the .cpp file when the header tree has an extra folder level', () => {
     const extraLevel = graphOf(['include/myproject/engine.h', 'src/engine.cpp', 'src/other.cpp']);
@@ -127,12 +128,26 @@ describe('schema for language models', () => {
       '  geo::Shape *-- geo::Point',
       'relations to classes outside this schema',
       '  geo::Shape ..> geo::Canvas',
+      'relations from classes outside this schema',
+      '  geo::Scene *-- geo::Shape [*]',
     ]);
     expect(schema.startsWith('# C++ class schema of project (4 classes)')).toBe(true);
   });
 
+  it('lists the classes outside the schema that derive from its classes', async () => {
+    const { graph } = await scanTestFolder(path.join(FIXTURES_DIRECTORY, 'project'));
+    const schema = buildLlmSchema(graph, ['geo::Shape'], {
+      projectName: 'project',
+      relationKinds: new Set(['inherit']),
+      detail: DEFAULT_SCHEMA_DETAIL,
+    });
+    const lines = schema.split('\n');
+    const start = lines.indexOf('relations from classes outside this schema');
+    expect(lines.slice(start + 1, start + 3)).toEqual(['  geo::Circle --|> geo::Shape', '  geo::Polygon --|> geo::Shape']);
+  });
+
   it('refuses an empty selection', () => {
-    const graph: Graph = { root: '/p', files: [], nodes: [], edges: [] };
+    const graph: Graph = { root: '/p', files: [], nodes: [], edges: [], calls: [] };
     expect(() => buildLlmSchema(graph, [], { projectName: 'p', relationKinds: new Set(), detail: DEFAULT_SCHEMA_DETAIL })).toThrow(
       'No class to export.',
     );

@@ -648,6 +648,150 @@ body {
   scrollbar-color: var(--control-hover) transparent;
 }
 
+/* ---- Interface of the selection ---- */
+
+.interface-panel {
+  position: absolute;
+  z-index: 16;
+  top: 66px;
+  right: var(--gap);
+  /* As tall as its content, at most down to the zoom controls and the minimap. */
+  max-height: calc(100% - 66px - 224px);
+  width: 380px;
+  max-width: calc(100% - 2 * var(--gap));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+.interface-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 8px;
+}
+
+.interface-header .glass-button {
+  width: 26px;
+  height: 26px;
+}
+
+.interface-panel .segmented {
+  align-self: flex-start;
+}
+
+.interface-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--control-hover) transparent;
+}
+
+.interface-class + .interface-class {
+  margin-top: 2px;
+}
+
+.interface-class-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.interface-class-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  outline: none;
+  font-weight: 600;
+}
+
+.interface-class-name .count {
+  margin-left: auto;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--control);
+  font-size: 11px;
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.interface-class-header .glass-button {
+  width: 24px;
+  height: 24px;
+  background: none;
+}
+
+.interface-use {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 24px;
+  padding: 2px 8px 2px 27px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  outline: none;
+  font-size: 12px;
+}
+
+.interface-class-name:hover,
+.interface-use:hover,
+.interface-class-header .glass-button:hover {
+  background: var(--control);
+}
+
+.interface-class-name:focus-visible,
+.interface-use:focus-visible {
+  border-color: var(--accent);
+}
+
+/* The kind of a use, with a mark in the color of its direction: the color of its arrows in the diagram. */
+.use-kind {
+  flex: none;
+  padding-left: 7px;
+  border-left: 2px solid var(--vscode-charts-green);
+  color: var(--muted);
+}
+
+.interface-list.uses .use-kind {
+  border-left-color: var(--vscode-charts-orange);
+}
+
+.use-kind.call {
+  font-style: italic;
+}
+
+.use-user {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family);
+}
+
+.use-place {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.interface-note {
+  padding-top: 6px;
+  border-top: 1px solid var(--glass-border);
+  font-size: 11px;
+}
+
 /* ---- Bottom elements ---- */
 
 .status-pill {

@@ -5,8 +5,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { IncludeResolver } from '../../src/model/includeResolver';
 import { findPairedFolder } from '../../src/scanner/pairedFolder';
-import { ClassNode, Graph } from '../../src/shared/graphModel';
-import { openTargetsOf } from '../../src/webview/model/openTargets';
+import { ClassNode, CodeSide, Graph, Member } from '../../src/shared/graphModel';
+import { codeLocationOf, openTargetsOf, otherCodeSide } from '../../src/webview/model/openTargets';
 import { FIXTURES_DIRECTORY, buildGraphFromSources, describeEdges, scanTestFolder } from './testHelpers';
 
 // inc/core, inc/net, src/core, src/net and src/tools, which has no counterpart under inc/.
@@ -149,5 +149,25 @@ describe('files a class can be opened in', () => {
     const { graph } = await scanTestFolder(path.join(PAIRED_PROJECT, 'src', 'tools'));
     const targets = openTargetsOf(nodeOf(graph, 'CommandLine'), graph.files);
     expect(targets.map((target) => target.fileName)).toEqual(['cli.cpp']);
+  });
+
+  it('gives the place of a class and of a member on the asked side', async () => {
+    const { graph } = await scanTestFolder(path.join(PAIRED_PROJECT, 'src', 'core'));
+    const engine = nodeOf(graph, 'app::Engine');
+    const place = (member: Member | undefined, side: CodeSide) => {
+      const location = codeLocationOf(engine, member, side);
+      return `${graph.files[location.file]}:${location.line}`;
+    };
+    expect(place(undefined, 'declaration')).toBe('inc/core/engine.h:8');
+    expect(place(undefined, 'definition')).toBe('src/core/engine.cpp:7');
+
+    const run = engine.methods.find((method) => method.name === 'run');
+    expect(place(run, 'declaration')).toBe('inc/core/engine.h:11');
+    expect(place(run, 'definition')).toBe('src/core/engine.cpp:9');
+
+    // An attribute has no definition of its own: both sides open its declaration.
+    const timer = engine.attributes.find((attribute) => attribute.name === 'timer');
+    expect(place(timer, 'definition')).toBe('inc/core/engine.h:15');
+    expect(otherCodeSide('definition')).toBe('declaration');
   });
 });

@@ -7,19 +7,21 @@
 //   drag a card or a group title   move it; dragging a selected card moves the whole selection
 //   click a card                   select it alone
 //   Ctrl/Cmd + click a card        add it to the selection, or remove it (Shift + click does the same)
-//   Alt + click a card             open what is under the pointer in the editor: the declaration
-//                                  of the member on a member line, of the class elsewhere
 //   click an arrow                 open the declaration of its relation in the editor
-//   double-click a card            cycle its display mode
+//   double-click a card            open what is under the pointer in the editor: the member on a
+//                                  member line, the class elsewhere. It opens the side that the
+//                                  user prefers, the definition (.cpp) unless changed in the side
+//                                  panel; with Shift, the other side
+//   Alt + double-click a card      cycle its display mode
 //   double-click a group title     collapse or expand the group
 //   right-click                    context menu
 //
 // Each gesture does one thing. In particular a plain click on a card only
-// selects: it never opens a file, so that selecting, dragging or
-// double-clicking a card cannot open one by accident. The files of a class are
-// opened with Alt + click, the context menu or the selection bar. An arrow has
-// nothing to select or to move, so a click on it opens its declaration; the
-// arrow under the pointer is highlighted, which shows what a click will do.
+// selects: it never opens a file, so that selecting or dragging a card cannot
+// open one by accident. Code is opened with a double-click, the context menu
+// or the selection bar. An arrow has nothing to select or to move, so a click
+// on it opens its declaration; the arrow under the pointer is highlighted,
+// which shows what a click will do.
 //
 // A press only becomes a drag once the pointer has moved a few pixels, so
 // that a slightly shaky click is still a click.
@@ -28,6 +30,7 @@ import { SourceLocation } from '../../shared/graphModel';
 import { Point } from '../../shared/savedState';
 import { CardRow } from '../model/cardGeometry';
 import { Rect } from '../model/geometry';
+import { codeLocationOf, otherCodeSide } from '../model/openTargets';
 import { DiagramStore } from '../state/diagramStore';
 import { Camera } from './camera';
 import { HitTarget } from './spatialIndex';
@@ -55,7 +58,6 @@ interface Modifiers {
   shift: boolean;
   /** Ctrl on Windows and Linux, Cmd on macOS. */
   command: boolean;
-  alt: boolean;
 }
 
 type Gesture =
@@ -102,7 +104,7 @@ export class PointerInteraction {
         kind: 'pressed',
         startScreen: this.screenPoint(event),
         target: this.context.hitTest(this.worldPoint(event)),
-        modifiers: { shift: event.shiftKey, command: event.ctrlKey || event.metaKey, alt: event.altKey },
+        modifiers: { shift: event.shiftKey, command: event.ctrlKey || event.metaKey },
       };
     } else {
       return;
@@ -204,25 +206,33 @@ export class PointerInteraction {
       store.select(this.context.groupMemberIds(target.key), keepsSelection ? 'add' : 'replace');
       return;
     }
-    const node = store.nodeById.get(target.id);
-    if (node === undefined) {
-      return;
-    }
-    if (pressed.modifiers.alt) {
-      const location = this.context.rowAt(target.id, world)?.member ?? node;
-      this.context.openSource(location.file, location.line);
-      return;
-    }
     store.select([target.id], keepsSelection ? 'toggle' : 'replace');
   }
 
   private onDoubleClick(event: MouseEvent): void {
-    const target = this.context.hitTest(this.worldPoint(event));
-    if (target?.kind === 'card') {
-      this.context.store.cycleDisplayMode(target.id);
-    } else if (target !== undefined) {
-      void this.context.store.toggleGroupCollapsed(target.key);
+    const { store } = this.context;
+    const world = this.worldPoint(event);
+    const target = this.context.hitTest(world);
+    if (target === undefined) {
+      return;
     }
+    if (target.kind !== 'card') {
+      void store.toggleGroupCollapsed(target.key);
+      return;
+    }
+    if (event.altKey) {
+      store.cycleDisplayMode(target.id);
+      return;
+    }
+    const node = store.nodeById.get(target.id);
+    if (node === undefined) {
+      return;
+    }
+    // The two clicks of a Shift + double-click each toggled the card in the selection, which
+    // left it as it was: only the file opens.
+    const side = event.shiftKey ? otherCodeSide(store.doubleClickOpens) : store.doubleClickOpens;
+    const location = codeLocationOf(node, this.context.rowAt(target.id, world)?.member, side);
+    this.context.openSource(location.file, location.line);
   }
 
   private onWheel(event: WheelEvent): void {

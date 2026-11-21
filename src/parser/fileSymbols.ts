@@ -44,6 +44,25 @@ export interface BodyTypeReference {
   line: number;
 }
 
+/** A method call found in the code of a method, as written in the source (spec §3.1). */
+export interface CallReference {
+  /** Name of the called method, for example `add` in `scene->add(shape)`. */
+  name: string;
+  line: number;
+  /**
+   * What the method is called on:
+   *   - `own`: nothing, or `this`, as in `update()` and `this->update()`;
+   *   - `scope`: a class named before `::`, as in `Registry::instance()`;
+   *   - `variable`: a variable, as in `scene->add(shape)`;
+   *   - `expression`: anything else, as in `factory().create()`.
+   */
+  receiverKind: 'own' | 'scope' | 'variable' | 'expression';
+  /** The name of the scope or of the variable. */
+  receiverName?: string;
+  /** The declared type of the variable, when it is a parameter or a local variable of the method. */
+  receiverType?: TypeExpression;
+}
+
 /** `friend class X;` */
 export interface FriendDeclaration {
   /** The class name as written, for example `ns::Auditor`. */
@@ -73,6 +92,8 @@ export interface RawMethod {
   signatureTypes: TypeExpression[];
   /** Type names used in the body, when the method is defined inside the class. */
   bodyReferences: BodyTypeReference[];
+  /** Method calls made in the body, when the method is defined inside the class. */
+  calls: CallReference[];
 }
 
 export interface TypeDeclaration {
@@ -118,10 +139,13 @@ export interface TypeAlias {
 export interface OutOfClassMethod {
   /** Owner class name as written, without template arguments, for example `core::Engine`. */
   ownerName: string;
+  /** Name of the method, for example `run`. */
+  name: string;
   /** Scope of the definition, used to resolve the owner name. */
   scope: LookupScope;
   signatureTypes: TypeExpression[];
   bodyReferences: BodyTypeReference[];
+  calls: CallReference[];
   line: number;
 }
 

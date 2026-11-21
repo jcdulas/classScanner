@@ -33,6 +33,9 @@ const ICON_PATHS = {
   full: 'M4 4h16v16H4z M4 9h16 M8 13h8 M8 16.5h6',
   report: 'M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z M14 3v5h5 M9 13h6 M9 17h6',
   collapse: 'M4 6h16v12H4z M9 12h6',
+  // A border crossed by an arrow in each direction.
+  interface: 'M12 3v18 M2 8h7 M6 5l3 3-3 3 M22 16h-7 M18 13l-3 3 3 3',
+  locate: 'M12 3v5 M12 16v5 M3 12h5 M16 12h5 M12 11.2a.8.8 0 1 0 0 1.6a.8.8 0 0 0 0-1.6z',
 };
 
 export type IconName = keyof typeof ICON_PATHS;

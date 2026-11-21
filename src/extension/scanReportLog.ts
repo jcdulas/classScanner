@@ -17,6 +17,7 @@ export function logScanReport(output: vscode.OutputChannel, report: ScanReport):
   output.appendLine(`Classes: ${report.nodeCount}`);
   const edgeSummary = ALL_RELATION_KINDS.map((kind) => `${kind} ${report.edgeCounts[kind]}`).join(', ');
   output.appendLine(`Relations: ${edgeSummary}`);
+  output.appendLine(`Method calls between classes: ${report.methodCallCount}`);
 
   if (report.skippedLargeFiles.length > 0) {
     output.appendLine(`Skipped large files (${report.skippedLargeFiles.length}):`);

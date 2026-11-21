@@ -3,8 +3,10 @@
 // The format looks like C++ declarations, which language models know well, but
 // keeps only what describes the design: classes grouped by namespace, with
 // their bases, members and source location, then the relations between them
-// as one short line each. A legend at the top explains the notation, so the
-// text can be pasted into a prompt as it is.
+// as one short line each. The relations that cross the border of the set are
+// listed apart, in both directions: what these classes use of the rest of the
+// code, and what the rest of the code uses of them. A legend at the top
+// explains the notation, so the text can be pasted into a prompt as it is.
 //
 // The size of a prompt matters, so the schema can be made lighter: without
 // private members, with public members only, without any member, and without
@@ -41,7 +43,9 @@ const OMISSION_NOTES: Record<SchemaMemberLevel, string | undefined> = {
   none: '# Members are left out: only the classes and their relations are listed.',
 };
 
-const RELATION_ARROWS: Record<Exclude<RelationKind, 'inherit'>, string> = {
+const RELATION_ARROWS: Record<RelationKind, string> = {
+  // Only written for a derived class outside the schema: inside, bases follow the class name.
+  inherit: '--|>',
   compose: '*--',
   aggregate: 'o--',
   depend: '..>',
@@ -55,7 +59,8 @@ const MEMBER_LEGEND = '# Members: + public, # protected, - private; "static", "v
 const RELATION_LEGEND = [
   '# Base classes follow the class name. Relations: A *-- B (A owns B), A o-- B (A holds B by pointer or',
   '# shared reference), A ..> B (A uses B), A ..include..> B (the file of A includes the file of B),',
-  '# A ..friend..> B (A declares B as friend), A +-- B (B is nested in A). [*] marks a collection.',
+  '# A ..friend..> B (A declares B as friend), A +-- B (B is nested in A), A --|> B (A derives from B,',
+  '# written when A is outside this schema). [*] marks a collection.',
 ];
 
 export interface SchemaOptions {
@@ -187,23 +192,43 @@ function nameWithinNamespace(node: ClassNode): string {
   return node.namespace === '' ? node.id : node.id.slice(node.namespace.length + 2);
 }
 
+/**
+ * The relations in three blocks: between two classes of the schema, from a class of the schema
+ * to a class outside of it, and from a class outside to a class of the schema.
+ */
 function relationLines(edges: Edge[], selected: Set<string>, relationKinds: Set<RelationKind>): string[] {
   const inside: string[] = [];
-  const outside: string[] = [];
+  const goingOut: string[] = [];
+  const comingIn: string[] = [];
   for (const edge of edges) {
-    if (edge.kind === 'inherit' || !relationKinds.has(edge.kind) || !selected.has(edge.from)) {
+    const isFromSelected = selected.has(edge.from);
+    const isToSelected = selected.has(edge.to);
+    if (!isFromSelected && !isToSelected) {
+      continue;
+    }
+    if (!relationKinds.has(edge.kind) || (edge.kind === 'inherit' && isFromSelected)) {
+      // The bases of a class of the schema are already written after its name.
       continue;
     }
     const multiplicity = edge.multiplicity === '*' ? ' [*]' : '';
     const line = `  ${edge.from} ${RELATION_ARROWS[edge.kind]} ${edge.to}${multiplicity}`;
-    (selected.has(edge.to) ? inside : outside).push(line);
+    if (isFromSelected && isToSelected) {
+      inside.push(line);
+    } else if (isFromSelected) {
+      goingOut.push(line);
+    } else {
+      comingIn.push(line);
+    }
   }
   const lines: string[] = [];
   if (inside.length > 0) {
     lines.push('', 'relations', ...inside.sort());
   }
-  if (outside.length > 0) {
-    lines.push('', 'relations to classes outside this schema', ...outside.sort());
+  if (goingOut.length > 0) {
+    lines.push('', 'relations to classes outside this schema', ...goingOut.sort());
+  }
+  if (comingIn.length > 0) {
+    lines.push('', 'relations from classes outside this schema', ...comingIn.sort());
   }
   return lines;
 }

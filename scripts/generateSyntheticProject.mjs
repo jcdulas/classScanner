@@ -118,6 +118,8 @@ function generateSource(fileIndex, classes) {
     const used = pick(classes);
     lines.push(`${qualified(owner)}::${owner.name}() {`);
     lines.push(`  ${qualified(used)} helper;`);
+    // A method call between two classes (every class has a `method0`).
+    lines.push('  helper.method0(1);');
     lines.push(`  auto* created = new ${qualified(pick(classes))}();`);
     lines.push('  (void)created;', '}', '');
     lines.push(`${qualified(owner)}::~${owner.name}() {}`, '');

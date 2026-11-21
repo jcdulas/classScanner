@@ -40,6 +40,8 @@ async function main(): Promise<void> {
   console.log(`Files:   ${report.scannedFileCount}`);
   console.log(`Classes: ${graph.nodes.length}`);
   console.log(`Edges:   ${graph.edges.length} ${JSON.stringify(report.edgeCounts)}`);
+  console.log(`Method calls between classes: ${graph.calls.length}`);
+  console.log(`Graph sent to the webview: ${(JSON.stringify(graph).length / 1_000_000).toFixed(1)} MB`);
   console.log(`Parse errors: ${report.parseErrorCount}, unresolved references: ${report.unresolvedTypeReferenceCount}`);
   console.log(`Scan:    ${scanDuration} ms, of which ${listingDuration} ms to list the files (target: under 15000 ms)`);
 

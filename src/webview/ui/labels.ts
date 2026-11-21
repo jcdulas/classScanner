@@ -2,6 +2,7 @@
 
 import { RelationKind } from '../../shared/graphModel';
 import { GroupingKind, LayoutKind } from '../../shared/savedState';
+import { InterfaceUse } from '../model/selectionInterface';
 
 export const RELATION_LABELS: Record<RelationKind, string> = {
   inherit: 'Inheritance',
@@ -12,6 +13,11 @@ export const RELATION_LABELS: Record<RelationKind, string> = {
   friend: 'Friend',
   nest: 'Nesting',
 };
+
+/** The kind of a use in the interface of a selection: a relation kind, or `Call of add()`. */
+export function interfaceUseLabel(use: InterfaceUse): string {
+  return use.kind === 'call' ? `Call of ${use.calledMethod ?? '?'}()` : RELATION_LABELS[use.kind];
+}
 
 export const LAYOUT_LABELS: Record<LayoutKind, string> = {
   grouped: 'Grouped',

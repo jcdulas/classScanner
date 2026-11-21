@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.9
+
+- Interface of a selection: the new **Interface** button of the selection bar lists how the selected classes are wired to the rest of the code. "Used by" shows what the rest of the code uses of them, "Uses" what they use of the rest; each line is one declaration or one call, and opens in the editor. The lists can be copied as text. While the panel is open, the arrows that enter the selection and those that leave it have their own colors.
+- The scan now finds method calls between classes, from the declared types of parameters, local variables and attributes. They detail the interface of a selection; as they are found without a compiler, some calls are missed.
+- A relation keeps every line that declares it, not only the first one: the two attributes that hold a class, each method that uses it.
+- The schema for an LLM also lists the relations that come from classes outside the selection.
+- A double-click on a card opens the code under the pointer: a member on its line, the class elsewhere. It opens the source file (`.cpp`), at the definition of the method, and Shift + double-click opens the header, at the declaration. The new "Double-click" section of the side panel swaps the two. Alt + click no longer opens a file, and the display mode of a card now cycles with Alt + double-click.
+- The context menu offers both the declaration and the definition of a method that is defined outside its class, and a search result opens on the side that a double-click opens.
+
 ## 0.1.8
 
 - A click on an arrow opens the line that declares its relation: the base class of an inheritance, the attribute of a composition or an aggregation, the method or the line of code of a dependency, the `#include`, the `friend` declaration, the nested class. The arrow under the pointer is highlighted, and a tooltip says what the click opens.

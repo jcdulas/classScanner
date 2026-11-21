@@ -51,11 +51,12 @@ function makeGraph(): Graph {
       makeNode('b::Other', 'b'),
     ],
     edges: [
-      { from: 'a::Left', to: 'a::Base', kind: 'inherit', access: 'public', file: 0, line: 1 },
-      { from: 'a::Right', to: 'a::Base', kind: 'inherit', access: 'public', file: 0, line: 1 },
-      { from: 'a::Left', to: 'b::Part', kind: 'compose', multiplicity: '1', file: 0, line: 1 },
-      { from: 'a::Right', to: 'b::Other', kind: 'depend', file: 0, line: 1 },
+      { from: 'a::Left', to: 'a::Base', kind: 'inherit', access: 'public', declarations: [{ file: 0, line: 1 }] },
+      { from: 'a::Right', to: 'a::Base', kind: 'inherit', access: 'public', declarations: [{ file: 0, line: 1 }] },
+      { from: 'a::Left', to: 'b::Part', kind: 'compose', multiplicity: '1', declarations: [{ file: 0, line: 1 }] },
+      { from: 'a::Right', to: 'b::Other', kind: 'depend', declarations: [{ file: 0, line: 1 }] },
     ],
+    calls: [],
   };
 }
 
@@ -115,7 +116,29 @@ describe('store actions', () => {
     expectNoOverlap(store);
   });
 
-  it('cycles the display mode on double-click', async () => {
+  it('gives a new selection set after each change of the selection', async () => {
+    const store = await loadedStore();
+    store.select(['a::Base'], 'replace');
+    const first = store.selection;
+    store.select(['a::Left'], 'add');
+    // The user interface compares the sets to know that the selection changed.
+    expect(store.selection).not.toBe(first);
+    expect(Array.from(store.selection)).toEqual(['a::Base', 'a::Left']);
+    store.select(['a::Base'], 'toggle');
+    expect(Array.from(store.selection)).toEqual(['a::Left']);
+  });
+
+  it('shows the interface of the selection while its panel is open and classes are selected', async () => {
+    const store = await loadedStore();
+    store.toggleInterfacePanel();
+    expect(store.showsSelectionInterface).toBe(false);
+    store.select(['a::Base'], 'replace');
+    expect(store.showsSelectionInterface).toBe(true);
+    store.clearSelection();
+    expect(store.showsSelectionInterface).toBe(false);
+  });
+
+  it('cycles the display mode on Alt + double-click', async () => {
     const store = await loadedStore();
     const modes = [];
     for (let step = 0; step < 3; step++) {
@@ -160,6 +183,8 @@ describe('store actions', () => {
     store.toggleRelation('depend');
     store.setSimplifyCardsWhenZoomedOut(false);
     store.setMergeRelationsWhenZoomedOut(true);
+    expect(store.doubleClickOpens).toBe('definition');
+    store.setDoubleClickOpens('declaration');
     const saved = JSON.parse(JSON.stringify(store.toSavedState()));
 
     const graph = makeGraph();
@@ -173,6 +198,7 @@ describe('store actions', () => {
     expect(restored.activeRelations.has('depend')).toBe(true);
     expect(restored.simplifyCardsWhenZoomedOut).toBe(false);
     expect(restored.mergeRelationsWhenZoomedOut).toBe(true);
+    expect(restored.doubleClickOpens).toBe('declaration');
     expect(restored.positions.has('b::Other')).toBe(false);
     // The new class is placed next to its group instead of recomputing the layout.
     expect(restored.positions.has('b::New')).toBe(true);

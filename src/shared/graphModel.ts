@@ -36,6 +36,8 @@ export interface Graph {
   root: string;
   nodes: ClassNode[];
   edges: Edge[];
+  /** Calls of a method of another class, found in the code of the methods (spec §3.1). */
+  calls: MethodCall[];
   /** Paths relative to `root`, with forward slashes. Nodes and members reference them by index. */
   files: string[];
 }
@@ -86,8 +88,31 @@ export interface Member {
   visibility: Visibility;
   /** Combination of MemberFlags. */
   flags: number;
+  /** Where the member is declared, in the body of its class: index in Graph.files and 1-based line. */
   file: number;
   line: number;
+  /** For a method defined outside its class, usually in a .cpp file: where its code is. */
+  definition?: SourceLocation;
+}
+
+/**
+ * The two places where the code of a class or of a method can be opened (spec §4.6): its
+ * declaration, usually in a header, and its definition, usually in a .cpp file.
+ */
+export type CodeSide = 'declaration' | 'definition';
+
+/**
+ * A line of the sources that creates a relation: the base class in the list of bases, the
+ * attribute, the method or the line of code that uses the other class, the `#include`, the
+ * `friend` declaration, the nested class.
+ */
+export interface RelationDeclaration {
+  /** Index in Graph.files. */
+  file: number;
+  /** 1-based line. */
+  line: number;
+  /** Name of the attribute or of the method of the `from` class that creates the relation, when there is one. */
+  member?: string;
 }
 
 export interface Edge {
@@ -95,17 +120,34 @@ export interface Edge {
   to: string;
   kind: RelationKind;
   /**
-   * Where the relation is declared, which the diagram opens when its arrow is clicked: the base
-   * class in the list of bases, the attribute, the method or the line of code that uses the
-   * other class, the `#include`, the `friend` declaration, the nested class.
-   * `file` is an index in Graph.files and `line` is 1-based, as in SourceLocation.
+   * Every line that declares the relation, in the order they were found: declarations in class
+   * bodies come before code in .cpp files. Never empty. The diagram opens the first one when
+   * the arrow is clicked, and lists them all in the interface of a selection (spec §4.6).
    */
-  file: number;
-  line: number;
+  declarations: RelationDeclaration[];
   /** Inheritance only. */
   access?: Visibility;
   /** Composition and aggregation only. */
   multiplicity?: '1' | '*';
+}
+
+/**
+ * A call of a method of another class, found in the code of a method (spec §3.1). Calls are
+ * found without a compiler, from the names and the declared types of the code: some are
+ * missed, and a few may be wrong.
+ */
+export interface MethodCall {
+  /** The class whose method makes the call. */
+  from: string;
+  /** Name of the method that makes the call. */
+  fromMethod: string;
+  /** The class of the object the method is called on. */
+  to: string;
+  /** Name of the called method; it is declared by `to` or by one of its base classes. */
+  method: string;
+  /** Where the call is: index in Graph.files and 1-based line. */
+  file: number;
+  line: number;
 }
 
 /** Statistics shown to the user after a scan. */
@@ -126,6 +168,7 @@ export interface ScanReport {
   topUnresolvedTypeNames: { name: string; count: number }[];
   nodeCount: number;
   edgeCounts: Record<RelationKind, number>;
+  methodCallCount: number;
 }
 
 export function hasFlag(member: Member, flag: number): boolean {

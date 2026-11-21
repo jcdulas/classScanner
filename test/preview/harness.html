@@ -97,10 +97,13 @@
           await wait(60);
         }
       },
-      // Double-click at the `x`, `y` point: on a group title it collapses the group, on a card it cycles its mode.
+      // Double-click at the `x`, `y` point: on a group title it collapses the group, on a card it opens the
+      // code under the pointer (the other side with `shift=1`), and with `alt=1` it cycles the mode of the card.
+      // The preview script prints the files that the double-click asked the editor to open.
       doubleClick: async () => {
         const host = document.querySelector('.diagram-host');
-        mouse('dblclick', host.clientWidth * Number(parameters.get('x')), host.clientHeight * Number(parameters.get('y')));
+        const options = { altKey: parameters.get('alt') === '1', shiftKey: parameters.get('shift') === '1' };
+        mouse('dblclick', host.clientWidth * Number(parameters.get('x')), host.clientHeight * Number(parameters.get('y')), options);
         await wait(1500);
       },
       // Drag from the `x`, `y` point 300 pixels to the right. With `undo=1`, press Ctrl+Z afterwards.
@@ -145,6 +148,19 @@
         const button = Array.from(document.querySelectorAll('.selection-bar .glass-button')).find((element) => element.textContent.includes('LLM schema'));
         button.click();
       },
+      // Select cards with a rectangle, then open the panel of the "Interface" button. With `text=uses`,
+      // show the second list of the panel.
+      interfacePanel: async () => {
+        const host = document.querySelector('.diagram-host');
+        dragRectangle(host.clientWidth * 0.42, host.clientHeight * 0.25, host.clientWidth * 0.7, host.clientHeight * 0.55, { ctrlKey: true });
+        await wait(300);
+        const button = Array.from(document.querySelectorAll('.selection-bar .glass-button')).find((element) => element.title.startsWith('List how the selection'));
+        button.click();
+        await wait(300);
+        if (parameters.get('text') === 'uses') {
+          document.querySelectorAll('.interface-panel .segment')[1].click();
+        }
+      },
       // Type the `text` URL parameter in the search box.
       search: async () => {
         const input = document.querySelector('.search-field input');
@@ -174,14 +190,15 @@
         mouse('pointermove', host.clientWidth * Number(parameters.get('x')), host.clientHeight * Number(parameters.get('y')));
         await wait(300);
       },
-      // Click at the `x`, `y` point, `count` times in a row (2 is a double-click). With `alt=1`, hold Alt.
+      // Click at the `x`, `y` point, `count` times in a row (2 is a double-click, which opens the code under
+      // the pointer). With `alt=1`, hold Alt; with `shift=1`, hold Shift.
       // On an arrow, the click opens the declaration of its relation.
       // The preview script prints the files that the clicks asked the editor to open.
       click: async () => {
         const host = document.querySelector('.diagram-host');
         const x = host.clientWidth * Number(parameters.get('x'));
         const y = host.clientHeight * Number(parameters.get('y'));
-        const options = { altKey: parameters.get('alt') === '1' };
+        const options = { altKey: parameters.get('alt') === '1', shiftKey: parameters.get('shift') === '1' };
         const count = Number(parameters.get('count') || '1');
         for (let index = 0; index < count; index++) {
           mouse('pointerdown', x, y, options);

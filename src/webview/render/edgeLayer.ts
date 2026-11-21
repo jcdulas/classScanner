@@ -33,6 +33,7 @@ import { nearestRouteWithin } from '../model/edgeHitTest';
 import { RoutedEdge, RoutingStyle, routeEdges } from '../model/edgeRouting';
 import { Rect } from '../model/geometry';
 import { AggregatedLink, DisplayedEdges, IndividualEdge } from '../model/sceneGeometry';
+import { interfaceDirectionOf } from '../model/selectionInterface';
 import { CARD_FONTS } from './fonts';
 import { Theme } from './theme';
 
@@ -118,15 +119,31 @@ export class EdgeLayer {
     this.drawAggregated(displayed.aggregated, theme, scale);
   }
 
-  /** Draws the edges of the selected classes on top of the others, in the accent color. */
-  rebuildHighlight(selection: Set<string>, activeKinds: Set<RelationKind>, theme: Theme, scale: number): void {
+  /**
+   * Draws the edges of the selected classes on top of the others, in the accent color.
+   *
+   * With `showsInterface`, only the edges that cross the border of the selection are drawn, in
+   * one color for those that come in from the rest of the code and another for those that go
+   * out to it (spec §4.8): the edges between two selected classes are its inside.
+   */
+  rebuildHighlight(selection: Set<string>, activeKinds: Set<RelationKind>, theme: Theme, scale: number, showsInterface: boolean): void {
     this.highlightGraphics.clear();
     if (selection.size === 0) {
       return;
     }
+    const draw = (routes: RoutedEdge[], kind: RelationKind, color: number) =>
+      drawEdgeBatch(this.highlightGraphics, routes, kind, color, theme, scale, HIGHLIGHT_WIDTH_FACTOR, undefined);
     for (const kind of activeKinds) {
-      const routes = (this.routesByKind.get(kind) ?? []).filter((route) => selection.has(route.edge.from) || selection.has(route.edge.to));
-      drawEdgeBatch(this.highlightGraphics, routes, kind, theme.accent, theme, scale, HIGHLIGHT_WIDTH_FACTOR, undefined);
+      const routes = this.routesByKind.get(kind) ?? [];
+      if (showsInterface) {
+        // The same rule as the lists of the panel, so that an arrow has the color of its list.
+        const usedBy = routes.filter((route) => interfaceDirectionOf(route.edge, selection) === 'usedBy');
+        const uses = routes.filter((route) => interfaceDirectionOf(route.edge, selection) === 'uses');
+        draw(usedBy, kind, theme.interfaceColors.usedBy);
+        draw(uses, kind, theme.interfaceColors.uses);
+      } else {
+        draw(routes.filter((route) => selection.has(route.edge.from) || selection.has(route.edge.to)), kind, theme.accent);
+      }
     }
   }
 

@@ -80,9 +80,12 @@ export function describeEdges(edges: Edge[]): string[] {
   });
 }
 
-/** Where each relation is declared, as `kind from -> to: file:line`. */
+/** Where each relation is declared, as `kind from -> to: file:line, file:line`. */
 export function describeEdgeLocations(graph: Graph): string[] {
-  return graph.edges.map((edge) => `${edge.kind} ${edge.from} -> ${edge.to}: ${graph.files[edge.file]}:${edge.line}`);
+  return graph.edges.map((edge) => {
+    const lines = edge.declarations.map((declaration) => `${graph.files[declaration.file]}:${declaration.line}`);
+    return `${edge.kind} ${edge.from} -> ${edge.to}: ${lines.join(", ")}`;
+  });
 }
 
 export function findType(symbols: FileSymbols, qualifiedName: string): TypeDeclaration {

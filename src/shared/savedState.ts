@@ -4,7 +4,7 @@
 // extension host, which writes it to `.classscanner/<name>.json`. When the
 // diagram is opened again, the host sends it back with the new graph.
 
-import { RelationKind } from './graphModel';
+import { CodeSide, RelationKind } from './graphModel';
 
 export type LayoutKind = 'grouped' | 'hierarchy' | 'organic';
 
@@ -70,6 +70,11 @@ export interface SavedDiagramState {
   mergeRelationsWhenZoomedOut?: boolean;
   /** Detail of the schema for language models, as last chosen in the diagram. Optional for older files. */
   schemaDetail?: SchemaDetail;
+  /**
+   * What a double-click on a card opens: the definition, in the .cpp file, or the declaration,
+   * in the header (spec §4.6). Optional for older files; the definition by default.
+   */
+  doubleClickOpens?: CodeSide;
 }
 
 /** The file written by the extension host also remembers how the folder was scanned. */

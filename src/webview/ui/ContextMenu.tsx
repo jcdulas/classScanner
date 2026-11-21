@@ -48,8 +48,15 @@ export function ContextMenu({ controller }: ContextMenuProps) {
       const icon = target.isHeader ? 'header' : 'code';
       items.push({ label: `Open ${target.fileName}`, icon, action: () => controller.openSource(target.file, target.line) });
     }
-    if (member !== undefined) {
+    // The member under the pointer: one entry, or two when the method is defined outside the class.
+    const definition = member?.definition;
+    if (member !== undefined && definition === undefined) {
       items.push({ label: `Go to ${member.name}`, icon: 'code', action: () => controller.openSource(member.file, member.line) });
+    } else if (member !== undefined && definition !== undefined) {
+      items.push(
+        { label: `Go to the declaration of ${member.name}`, icon: 'header', action: () => controller.openSource(member.file, member.line) },
+        { label: `Go to the definition of ${member.name}`, icon: 'code', action: () => controller.openSource(definition.file, definition.line) },
+      );
     }
     items.push(
       'separator',

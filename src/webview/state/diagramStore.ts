@@ -6,7 +6,7 @@
 // renderer only redoes the work that is needed (for example, toggling a
 // relation kind only redraws the edges).
 
-import { ClassNode, Graph, Member, RelationKind, ScanReport } from '../../shared/graphModel';
+import { ClassNode, CodeSide, Graph, Member, RelationKind, ScanReport } from '../../shared/graphModel';
 import { DiagramSettings } from '../../shared/messages';
 import {
   CameraState,
@@ -44,6 +44,8 @@ export type ChangeTopic =
   | 'zoomOptions'
   /** The detail options of the schema for language models. */
   | 'schemaOptions'
+  /** What a double-click on a card opens. */
+  | 'openOptions'
   /** User interface only: phase, search, menus, panels. */
   | 'ui';
 
@@ -89,7 +91,7 @@ const MAX_UNDO_STEPS = 50;
 
 type Listener = (change: StoreChange) => void;
 
-const PERSISTED_TOPICS: ChangeTopic[] = ['positions', 'cards', 'relations', 'visibility', 'groups', 'camera', 'zoomOptions', 'schemaOptions'];
+const PERSISTED_TOPICS: ChangeTopic[] = ['positions', 'cards', 'relations', 'visibility', 'groups', 'camera', 'zoomOptions', 'schemaOptions', 'openOptions'];
 
 export class DiagramStore {
   // ---- Data received from the extension host ----
@@ -114,6 +116,8 @@ export class DiagramStore {
   mergeRelationsWhenZoomedOut = false;
   /** How much detail the schema for language models contains (spec §4.7). */
   schemaDetail: SchemaDetail = DEFAULT_SCHEMA_DETAIL;
+  /** What a double-click on a card opens; Shift + double-click opens the other side (spec §4.6). */
+  doubleClickOpens: CodeSide = 'definition';
 
   // ---- Derived data, recomputed when its inputs change ----
   cardLayouts = new Map<string, CardLayout>();
@@ -130,6 +134,8 @@ export class DiagramStore {
   levelOfDetail: LevelOfDetail = 'compact';
   contextMenu: ContextMenuState | null = null;
   isSidePanelOpen = true;
+  /** True when the user opened the panel of the interface of the selection (spec §4.8). */
+  isInterfacePanelOpen = false;
   lastLayoutDurationMs = 0;
 
   /** Number of layouts started so far; tells a layout that ends whether a newer one replaced it. */
@@ -366,7 +372,7 @@ export class DiagramStore {
     this.emit(moved.size > 0 ? ['cards', 'positions'] : ['cards']);
   }
 
-  /** Double-click on a card: auto, then full, then compact, then auto again. */
+  /** Auto, then full, then compact, then auto again. */
   cycleDisplayMode(id: string): void {
     const next: Record<DisplayMode, DisplayMode> = { auto: 'full', full: 'compact', compact: 'auto' };
     this.setDisplayMode([id], next[this.displayModeOf(id)]);
@@ -635,17 +641,19 @@ export class DiagramStore {
   // ---------------------------------------------------------------------------
 
   select(ids: string[], mode: 'replace' | 'toggle' | 'add'): void {
-    if (mode === 'replace') {
-      this.selection = new Set(ids);
-    } else {
+    // The selection is a new set after each change, never the same set modified: the user
+    // interface compares the sets to know that what it computed from the selection is out of date.
+    const selection = mode === 'replace' ? new Set(ids) : new Set(this.selection);
+    if (mode !== 'replace') {
       for (const id of ids) {
-        if (mode === 'toggle' && this.selection.has(id)) {
-          this.selection.delete(id);
+        if (mode === 'toggle' && selection.has(id)) {
+          selection.delete(id);
         } else {
-          this.selection.add(id);
+          selection.add(id);
         }
       }
     }
+    this.selection = selection;
     this.emit(['selection']);
   }
 
@@ -690,6 +698,11 @@ export class DiagramStore {
     this.emit(['schemaOptions', 'ui']);
   }
 
+  setDoubleClickOpens(side: CodeSide): void {
+    this.doubleClickOpens = side;
+    this.emit(['openOptions', 'ui']);
+  }
+
   setLevelOfDetail(level: LevelOfDetail): void {
     if (level !== this.levelOfDetail) {
       this.levelOfDetail = level;
@@ -709,6 +722,17 @@ export class DiagramStore {
   toggleSidePanel(): void {
     this.isSidePanelOpen = !this.isSidePanelOpen;
     this.emit(['ui']);
+  }
+
+  /** The interface of the selection is shown while its panel is open and classes are selected. */
+  get showsSelectionInterface(): boolean {
+    return this.isInterfacePanelOpen && this.selection.size > 0;
+  }
+
+  toggleInterfacePanel(): void {
+    this.isInterfacePanelOpen = !this.isInterfacePanelOpen;
+    // The arrows of the selection are drawn differently while the panel is open.
+    this.emit(['selection', 'ui']);
   }
 
   /** Shows a message in the banner above the diagram. */
@@ -745,6 +769,7 @@ export class DiagramStore {
       simplifyCardsWhenZoomedOut: this.simplifyCardsWhenZoomedOut,
       mergeRelationsWhenZoomedOut: this.mergeRelationsWhenZoomedOut,
       schemaDetail: this.schemaDetail,
+      doubleClickOpens: this.doubleClickOpens,
     };
   }
 
@@ -767,6 +792,7 @@ export class DiagramStore {
     this.simplifyCardsWhenZoomedOut = state.simplifyCardsWhenZoomedOut ?? true;
     this.mergeRelationsWhenZoomedOut = state.mergeRelationsWhenZoomedOut ?? false;
     this.schemaDetail = { ...DEFAULT_SCHEMA_DETAIL, ...state.schemaDetail };
+    this.doubleClickOpens = state.doubleClickOpens ?? 'definition';
   }
 
   // ---------------------------------------------------------------------------

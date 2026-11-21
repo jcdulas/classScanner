@@ -20,6 +20,8 @@ export interface Theme {
   groupBorder: number;
   groupTitle: number;
   relationColors: Record<RelationKind, number>;
+  /** Arrows that cross the border of the selection, while its interface is shown (spec §4.8). */
+  interfaceColors: { usedBy: number; uses: number };
   visibilityColors: Record<Visibility, number>;
   /** Header colors of the cards, one per group (chosen by a hash of the group key). */
   groupPalette: number[];
@@ -51,6 +53,10 @@ export function readTheme(): Theme {
       include: color('--vscode-charts-lines', 0x808080),
       friend: color('--vscode-charts-purple', 0xb180d7),
       nest: color('--vscode-charts-yellow', 0xcca700),
+    },
+    interfaceColors: {
+      usedBy: color('--vscode-charts-green', 0x89d185),
+      uses: color('--vscode-charts-orange', 0xd18616),
     },
     visibilityColors: {
       public: color('--vscode-charts-green', 0x89d185),
