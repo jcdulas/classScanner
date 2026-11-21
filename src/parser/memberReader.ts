@@ -12,7 +12,7 @@
 import { MemberFlags, Visibility } from '../shared/graphModel';
 import { collectBodyTypeReferences } from './bodyReferences';
 import { collectCallReferences } from './callReferences';
-import { RawAttribute, RawMethod, TypeExpression } from './fileSymbols';
+import { ParameterList, RawAttribute, RawMethod, TypeExpression } from './fileSymbols';
 import { SyntaxNode, hasChildOfType, hasChildWithText, lineOf, normalizeWhitespace } from './syntaxHelpers';
 import { innerDeclarator, readDeclaratorName, readTypeExpression, readTypeText } from './typeReader';
 
@@ -134,6 +134,45 @@ function readAttributeTypeText(typeNode: SyntaxNode, declarator: SyntaxNode, isC
   return `${readTypeText(typeNode, null, isConstType)} (*)${parametersText}`;
 }
 
+/**
+ * The parameters of a function declarator, as needed to tell overloads apart: their types, how
+ * many of them a call must give, and whether it can give more.
+ *
+ * In the tree-sitter C++ grammar a parameter with a default value is an
+ * `optional_parameter_declaration`, a parameter pack (`Args... args`) is a
+ * `variadic_parameter_declaration`, and the `...` of a C function is a token of the list.
+ */
+export function readParameterList(functionDeclarator: SyntaxNode): ParameterList {
+  const parameterList = functionDeclarator.childForFieldName('parameters');
+  const parameters: ParameterList = { types: [], requiredCount: 0, isVariadic: false };
+  if (parameterList === null) {
+    return parameters;
+  }
+  for (const parameter of parameterList.namedChildren) {
+    if (parameter === null || !PARAMETER_TYPES.has(parameter.type)) {
+      continue;
+    }
+    const typeNode = parameter.childForFieldName('type');
+    if (parameter.type === 'variadic_parameter_declaration') {
+      parameters.isVariadic = true;
+    } else if (typeNode !== null) {
+      parameters.types.push(readTypeExpression(typeNode, parameter.childForFieldName('declarator')));
+      if (parameter.type === 'parameter_declaration') {
+        parameters.requiredCount++;
+      }
+    }
+  }
+  if (parameterList.children.some((child) => child !== null && child.type === '...')) {
+    parameters.isVariadic = true;
+  }
+  // `int count(void)` takes no parameter.
+  const onlyType = parameters.types.length === 1 ? parameters.types[0] : undefined;
+  if (onlyType !== undefined && onlyType.name === 'void' && onlyType.indirection === 'value') {
+    return { types: [], requiredCount: 0, isVariadic: parameters.isVariadic };
+  }
+  return parameters;
+}
+
 /** The types of the parameters of a function declarator. */
 export function readParameterTypes(functionDeclarator: SyntaxNode): TypeExpression[] {
   const parameterList = functionDeclarator.childForFieldName('parameters');
@@ -182,8 +221,9 @@ function buildMethod(parts: MethodParts): RawMethod {
   const returnText = typeNode === null ? '' : `: ${readTypeText(typeNode, declarator, parts.isConstType)}`;
 
   const signatureTypes = readParameterTypes(functionDeclarator);
-  if (typeNode !== null) {
-    signatureTypes.push(readTypeExpression(typeNode, declarator));
+  const returnType = typeNode === null ? undefined : readTypeExpression(typeNode, declarator);
+  if (returnType !== undefined) {
+    signatureTypes.push(returnType);
   }
 
   return {
@@ -193,6 +233,8 @@ function buildMethod(parts: MethodParts): RawMethod {
     flags,
     line: lineOf(functionDeclarator),
     signatureTypes,
+    returnType,
+    parameters: readParameterList(functionDeclarator),
     bodyReferences: collectBodyTypeReferences(parts.bodyNodes),
     calls: collectCallReferences(functionDeclarator, parts.bodyNodes),
   };

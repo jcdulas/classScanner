@@ -9,7 +9,8 @@
 import { useMemo, useState } from 'preact/hooks';
 import { ClassNode } from '../../shared/graphModel';
 import { DiagramController } from '../controller';
-import { InterfaceUse, UsedClass, computeSelectionInterface, countUsers } from '../model/selectionInterface';
+import { usersText } from '../export/interfaceText';
+import { InterfaceUse, UsedClass, computeSelectionInterface } from '../model/selectionInterface';
 import { GlassButton, PressableRow, Segmented, SegmentOption } from './controls';
 import { Icon } from './Icon';
 import { interfaceUseLabel } from './labels';
@@ -33,14 +34,15 @@ export function InterfacePanel({ controller }: InterfacePanelProps) {
   const isShown = store.showsSelectionInterface;
   // Computed again only when the graph or the selection changes: the store gives a new set for each selection.
   const selectionInterface = useMemo(
-    () => (isShown && graph !== undefined ? computeSelectionInterface(graph, selection) : undefined),
-    [isShown, graph, selection],
+    () => (isShown && graph !== undefined ? computeSelectionInterface(graph, selection, store.preciseCalls) : undefined),
+    [isShown, graph, selection, store.preciseCalls],
   );
   if (graph === undefined || selectionInterface === undefined) {
     return null;
   }
 
   const { usedBy, uses, internalIds } = selectionInterface;
+  const checkedCount = Array.from(selection).filter((id) => store.preciseCalls.classIds.has(id)).length;
   const classes = direction === 'usedBy' ? usedBy : uses;
   const options: SegmentOption[] = [
     { value: 'usedBy', label: `Used by ${usedBy.length}`, title: 'The classes of the selection that the rest of the code uses' },
@@ -48,7 +50,7 @@ export function InterfacePanel({ controller }: InterfacePanelProps) {
   ];
   const summary =
     direction === 'usedBy'
-      ? `${usedBy.length} of ${countOf(selection.size, 'class is', 'classes are')} used by ${countOf(countUsers(usedBy), 'class', 'classes')} outside the selection.`
+      ? `${usedBy.length} of ${countOf(selection.size, 'class is', 'classes are')} used by ${usersText(usedBy)} outside the selection.`
       : `The selection uses ${countOf(uses.length, 'class', 'classes')} outside of it.`;
 
   return (
@@ -80,8 +82,29 @@ export function InterfacePanel({ controller }: InterfacePanelProps) {
           </div>
         )}
       </div>
-      <div class="hint interface-note">
-        Every relation kind is listed, displayed or not. Calls are found without a compiler: some are missed, and a few may be wrong.
+      <div class="interface-note">
+        <div class="hint">
+          Every relation kind is listed, displayed or not. Calls are found without a compiler: some are missed, and a few may be wrong.
+        </div>
+        <div class="analysis-actions">
+          <GlassButton
+            icon="check"
+            label={store.isAskingPreciseCalls ? 'Asking the C++ extension…' : 'Check calls with the C++ extension'}
+            title={
+              'Ask the C++ language extension of VS Code who calls the methods of the selected classes, and what they call. ' +
+              'It compiles the code, so it also finds the calls that the scan cannot follow, such as those through a lambda or a template. It can take a few seconds per method.'
+            }
+            isDisabled={store.isAskingPreciseCalls}
+            onPress={() => controller.requestPreciseCalls()}
+          />
+        </div>
+        {store.preciseCallsMessage !== '' && <div class="hint">{store.preciseCallsMessage}</div>}
+        {checkedCount > 0 && (
+          <div class="hint">
+            <Icon name="check" size={11} /> marks the calls that the C++ extension found, for the {checkedCount} of {selection.size} selected{' '}
+            {selection.size === 1 ? 'class' : 'classes'} it was asked about.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -136,10 +159,13 @@ function UseRow({ use, files, nameOf, controller }: UseRowProps) {
   return (
     <PressableRow
       className="interface-use"
-      title={`${interfaceUseLabel(use)}, from ${use.userId}\nOpen ${filePath}:${use.line}`}
+      title={`${interfaceUseLabel(use)}, from ${use.userId}${use.isConfirmed === true ? ' (found by the C++ extension)' : ''}\nOpen ${filePath}:${use.line}`}
       onPress={() => controller.openSource(use.file, use.line)}
     >
-      <span class={`use-kind ${use.kind === 'call' ? 'call' : ''}`}>{interfaceUseLabel(use)}</span>
+      <span class={`use-kind ${use.kind === 'call' ? 'call' : ''}`}>
+        {interfaceUseLabel(use)}
+        {use.isConfirmed === true && <Icon name="check" size={11} />}
+      </span>
       <span class="use-user">{user}</span>
       <span class="use-place">
         {fileName}:{use.line}

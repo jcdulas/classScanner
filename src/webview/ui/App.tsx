@@ -2,10 +2,12 @@
 //
 // The WebGL canvas fills the whole webview (`diagram-host`). The user
 // interface floats above it as glass panels: bars at the top, the side panel
-// on the left, the selection bar and status at the bottom.
+// on the left, the selection bar and status at the bottom, and on the right the
+// panel of the interface of the selection or the analysis panel.
 
 import { useEffect, useRef } from 'preact/hooks';
 import { DiagramController } from '../controller';
+import { AnalysisPanel } from './AnalysisPanel';
 import { ContextMenu } from './ContextMenu';
 import { InterfacePanel } from './InterfacePanel';
 import { SelectionBar } from './SelectionBar';
@@ -69,6 +71,7 @@ export function App({ controller }: AppProps) {
       <StatusPill controller={controller} />
       <SelectionBar controller={controller} />
       <InterfacePanel controller={controller} />
+      <AnalysisPanel controller={controller} />
       <ZoomControls controller={controller} />
       <ContextMenu controller={controller} />
     </div>

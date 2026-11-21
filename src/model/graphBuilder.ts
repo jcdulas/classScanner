@@ -6,12 +6,21 @@
 //   2. create "external" nodes for classes that are only forward-declared;
 //   3. resolve every type name and create the edges of the seven relation kinds;
 //   4. find the file that implements each class, when it is not the file that declares it;
-//   5. find the class that each method call goes to (callResolver.ts).
+//   5. find the class that each method call goes to (callResolver.ts);
+//   6. list what the functions that belong to no class use of the classes.
 
-import { BodyTypeReference, LookupScope, OutOfClassMethod, TypeDeclaration, FileSymbols, TypeExpression } from '../parser/fileSymbols';
+import {
+  BodyTypeReference,
+  FileSymbols,
+  FreeFunction,
+  LookupScope,
+  OutOfClassMethod,
+  TypeDeclaration,
+  TypeExpression,
+} from '../parser/fileSymbols';
 import { collectTypeNames } from '../parser/typeReader';
-import { ClassNode, Graph, Member, MemberFlags, SourceLocation } from '../shared/graphModel';
-import { CallResolver, MethodCode } from './callResolver';
+import { ClassNode, FunctionUse, Graph, Member, MemberFlags, SourceLocation } from '../shared/graphModel';
+import { CallResolver, CallableSignature, DeclaredFunction, DeclaredMemberTypes, FunctionCode, MethodCode } from './callResolver';
 import { EdgeCollector } from './edgeCollector';
 import { ImplementationFinder } from './implementationFinder';
 import { IncludeResolver } from './includeResolver';
@@ -50,6 +59,9 @@ class GraphBuilder {
   private readonly edges = new EdgeCollector();
   /** The methods that have code, for the search of their calls once every relation is known. */
   private readonly methodCodes: MethodCode[] = [];
+  /** The same for the free functions, and the classes that they name (spec §3.2). */
+  private readonly functionCodes: FunctionCode[] = [];
+  private readonly functionDependencies: FunctionUse[] = [];
   private readonly unresolvedTypeNames = new Map<string, number>();
   private resolver!: TypeResolver;
   private classifier!: MemberRelationClassifier;
@@ -80,6 +92,9 @@ class GraphBuilder {
       for (const method of fileSymbols.outOfClassMethods) {
         this.addOutOfClassMethod(method, fileSymbols);
       }
+      for (const freeFunction of fileSymbols.freeFunctions) {
+        this.addFreeFunction(freeFunction, freeFunction.name, fileSymbols);
+      }
     }
     this.addIncludeEdges();
     this.findImplementations();
@@ -88,12 +103,13 @@ class GraphBuilder {
     }
 
     const edges = this.edges.toEdges();
-    const callResolver = new CallResolver(this.nodesById, this.resolver, this.attributeTypesByClass(), edges);
+    const callResolver = new CallResolver(this.nodesById, this.resolver, this.declaredMemberTypes(), this.declaredFunctions(), edges);
     const graph: Graph = {
       root: this.root,
       nodes: Array.from(this.nodesById.values()),
       edges,
       calls: callResolver.resolve(this.methodCodes),
+      functionUses: [...this.functionDependencies, ...callResolver.resolveFunctionCalls(this.functionCodes)],
       files: this.fileSymbolsList.map((symbols) => symbols.file),
     };
     return { graph, unresolvedTypeNames: this.unresolvedTypeNames };
@@ -141,6 +157,7 @@ class GraphBuilder {
       this.declarationsById.set(id, []);
     }
     this.declarationsById.get(id)!.push(located);
+    (node.sourceRanges ??= []).push({ file: fileIndex, ...declaration.sourceRange });
     this.mergeMembers(node, declaration, fileIndex);
     addToSetMap(this.classIdsByFile, fileSymbols.file, id);
     addToSetMap(this.declaredClassIdsByFile, fileSymbols.file, id);
@@ -190,6 +207,7 @@ class GraphBuilder {
       return;
     }
     addUnique((primary.specializations ??= []), declaration.specializationName!);
+    (primary.sourceRanges ??= []).push({ file: this.fileIndexByPath.get(located.fileSymbols.file)!, ...declaration.sourceRange });
   }
 
   private addExternalNodes(): void {
@@ -256,11 +274,15 @@ class GraphBuilder {
   private addOutOfClassMethod(method: OutOfClassMethod, fileSymbols: FileSymbols): void {
     const ownerId = this.resolveClass(method.ownerName, method.scope, fileSymbols.usingNamespaces);
     if (ownerId === undefined) {
+      // The name before `::` is a namespace, or a class outside the scanned files: for the
+      // classes of the diagram, this code is a free function.
+      this.addFreeFunction(method, `${method.ownerName}::${method.name}`, fileSymbols);
       return;
     }
     addToSetMap(this.classIdsByFile, fileSymbols.file, ownerId);
     const owner = this.nodesById.get(ownerId)!;
     const fileIndex = this.fileIndexByPath.get(fileSymbols.file)!;
+    (owner.sourceRanges ??= []).push({ file: fileIndex, ...method.sourceRange });
     if (fileIndex !== owner.file) {
       addUniqueNumber((owner.definitionFiles ??= []), fileIndex);
       const definitionLines = this.definitionLinesById.get(ownerId) ?? new Map<number, number>();
@@ -275,6 +297,31 @@ class GraphBuilder {
     this.addDependencies(ownerId, method.name, methodLocation, method.signatureTypes, method.bodyReferences, ownerScope, usingNamespaces);
     if (method.calls.length > 0) {
       this.methodCodes.push({ classId: ownerId, methodName: method.name, file: fileIndex, calls: method.calls, scope: ownerScope, usingNamespaces });
+    }
+  }
+
+  /**
+   * A function that belongs to no class (spec §3.2): the classes that it names in its signature
+   * or in its code are dependencies, each kept once with its first line, and its calls are
+   * resolved with those of the methods.
+   */
+  private addFreeFunction(code: FreeFunction, name: string, fileSymbols: FileSymbols): void {
+    const namespaces = code.scope.namespacePath.filter((part) => part !== ANONYMOUS_NAMESPACE);
+    const functionName = [...namespaces, name].join('::');
+    const file = this.fileIndexByPath.get(fileSymbols.file)!;
+    const usingNamespaces = fileSymbols.usingNamespaces;
+    const signatureReferences = code.signatureTypes.flatMap(collectTypeNames).map((typeName) => ({ name: typeName, line: code.line }));
+    const knownClassIds = new Set<string>();
+    for (const reference of [...signatureReferences, ...code.bodyReferences]) {
+      for (const targetId of this.resolveDependencyTargets(reference.name, code.scope, usingNamespaces)) {
+        if (!knownClassIds.has(targetId)) {
+          knownClassIds.add(targetId);
+          this.functionDependencies.push({ functionName, to: targetId, kind: 'depend', file, line: reference.line });
+        }
+      }
+    }
+    if (code.calls.length > 0) {
+      this.functionCodes.push({ functionName, file, calls: code.calls, scope: code.scope, usingNamespaces, knownClassIds: Array.from(knownClassIds) });
     }
   }
 
@@ -387,19 +434,39 @@ class GraphBuilder {
 
   // ---- Step 4: method calls ----
 
-  /** The type of each attribute of each class, by name: a call on an attribute goes to the class of its type. */
-  private attributeTypesByClass(): Map<string, Map<string, TypeExpression>> {
-    const typesByClass = new Map<string, Map<string, TypeExpression>>();
+  /**
+   * The types of the attributes of each class and the signatures of its methods, as each of
+   * its declarations writes them: a call on an attribute, or on what a method returns, goes
+   * to the class of that type.
+   */
+  private declaredMemberTypes(): Map<string, DeclaredMemberTypes[]> {
+    const typesByClass = new Map<string, DeclaredMemberTypes[]>();
     for (const [id, declarations] of this.declarationsById) {
-      const types = new Map<string, TypeExpression>();
-      for (const located of declarations) {
-        for (const attribute of located.declaration.attributes) {
-          types.set(attribute.name, attribute.type);
+      const declaredTypes = declarations.map(({ declaration, fileSymbols }) => {
+        const methods = new Map<string, CallableSignature[]>();
+        for (const method of declaration.methods) {
+          const signature = { parameters: method.parameters, returnType: method.returnType };
+          methods.set(method.name, [...(methods.get(method.name) ?? []), signature]);
         }
-      }
-      typesByClass.set(id, types);
+        const attributeTypes = new Map(declaration.attributes.map((attribute) => [attribute.name, attribute.type]));
+        return { scope: declaration.scope, usingNamespaces: fileSymbols.usingNamespaces, attributeTypes, methods };
+      });
+      typesByClass.set(id, declaredTypes);
     }
     return typesByClass;
+  }
+
+  /** The free functions, from their definitions and from their prototypes: what a call of one of them returns. */
+  private declaredFunctions(): DeclaredFunction[] {
+    const functions: DeclaredFunction[] = [];
+    for (const fileSymbols of this.fileSymbolsList) {
+      const usingNamespaces = fileSymbols.usingNamespaces;
+      for (const declared of [...fileSymbols.freeFunctions, ...fileSymbols.functionPrototypes]) {
+        const signature = { parameters: declared.parameters, returnType: declared.returnType };
+        functions.push({ name: declared.name, scope: declared.scope, usingNamespaces, signature });
+      }
+    }
+    return functions;
   }
 
   // ---- Helpers ----
@@ -432,6 +499,9 @@ class GraphBuilder {
     this.unresolvedTypeNames.set(name, (this.unresolvedTypeNames.get(name) ?? 0) + 1);
   }
 }
+
+/** The name that the parser gives to a namespace without a name. */
+const ANONYMOUS_NAMESPACE = '(anonymous)';
 
 function memberKey(member: Member): string {
   return `${member.name}|${member.signature}`;

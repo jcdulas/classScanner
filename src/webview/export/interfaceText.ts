@@ -12,7 +12,7 @@
 //       call of add()    geo::Renderer::render  [src/renderer.cpp:12]
 
 import { Graph } from '../../shared/graphModel';
-import { InterfaceUse, SelectionInterface, UsedClass, countUsers } from '../model/selectionInterface';
+import { InterfaceUse, SelectionInterface, UsedClass, countFreeFunctionUsers, countUsers } from '../model/selectionInterface';
 import { interfaceUseLabel } from '../ui/labels';
 
 /** The selected classes are named in the header up to this number; beyond it only their count is written. */
@@ -28,11 +28,12 @@ export function buildInterfaceText(graph: Graph, selection: Set<string>, selecti
     lines.push(`# Classes: ${selectedIds.join(', ')}`);
   }
   lines.push(
-    '# Each line is one use: its kind, the class and the member that uses, and [file:line].',
+    '# Each line is one use: its kind, the class and the member that uses (or the free function, with `()`), and [file:line].',
     '# Calls are found without a compiler: some are missed, and a few may be wrong.',
+    ...(hasConfirmedCall(selectionInterface) ? ['# A call marked "confirmed" was found by the C++ language extension of VS Code, which compiles the code.'] : []),
     '',
     `used by the rest of the code: ${usedBy.length} of ${countOf(selectedIds.length, 'class', 'classes')}, ` +
-      `used by ${countOf(countUsers(usedBy), 'class', 'classes')}`,
+      `used by ${usersText(usedBy)}`,
     ...classLines(usedBy, graph.files),
     '',
     `uses of the rest of the code: ${countOf(uses.length, 'class', 'classes')}`,
@@ -52,15 +53,28 @@ function classLines(classes: UsedClass[], files: string[]): string[] {
     const labelWidth = Math.max(...usedClass.uses.map((use) => interfaceUseLabel(use).length));
     for (const use of usedClass.uses) {
       const label = interfaceUseLabel(use).toLowerCase().padEnd(labelWidth);
-      lines.push(`    ${label}  ${userText(use)}  [${files[use.file] ?? '?'}:${use.line}]`);
+      const confirmation = use.isConfirmed === true ? '  confirmed' : '';
+      lines.push(`    ${label}  ${userText(use)}  [${files[use.file] ?? '?'}:${use.line}]${confirmation}`);
     }
   }
   return lines;
 }
 
+function hasConfirmedCall(selectionInterface: SelectionInterface): boolean {
+  const classes = [...selectionInterface.usedBy, ...selectionInterface.uses];
+  return classes.some((usedClass) => usedClass.uses.some((use) => use.isConfirmed === true));
+}
+
 /** The class that uses, with its member when it is known: `geo::Renderer::render`. */
 function userText(use: InterfaceUse): string {
   return use.userMember === undefined ? use.userId : `${use.userId}::${use.userMember}`;
+}
+
+/** `5 classes`, followed by ` and 2 free functions` when there are some. */
+export function usersText(classes: UsedClass[]): string {
+  const functionCount = countFreeFunctionUsers(classes);
+  const classesText = countOf(countUsers(classes), 'class', 'classes');
+  return functionCount === 0 ? classesText : `${classesText} and ${countOf(functionCount, 'free function', 'free functions')}`;
 }
 
 function countOf(count: number, singular: string, plural: string): string {

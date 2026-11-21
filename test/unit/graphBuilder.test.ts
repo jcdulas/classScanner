@@ -2,6 +2,7 @@
 
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { DiscoveryFilter } from '../../src/scanner/fileDiscovery';
 import { Graph } from '../../src/shared/graphModel';
 import {
   FIXTURES_DIRECTORY,
@@ -191,6 +192,21 @@ describe('fixture project', () => {
 });
 
 describe('file discovery', () => {
+  it('applies the scan roots, file and directory exclusions and depth to newly saved files', () => {
+    const filter = new DiscoveryFilter({ maxDepth: 2, extensions: ['.cpp', '.h'], exclude: ['**/build/**', 'net', '**/*.generated.h'] });
+    const paired = path.join(FIXTURES_DIRECTORY, 'paired');
+    const roots = ['src', 'inc'].map((side) => path.join(paired, side));
+    const wouldScan = (file: string) => roots.some((root) => filter.includesSavedFile(root, path.join(paired, file)));
+    expect(wouldScan('src/core/new.CPP')).toBe(true);
+    expect(wouldScan('inc/core/new.h')).toBe(true);
+    expect(wouldScan('src/core/build/generated.cpp')).toBe(false);
+    expect(wouldScan('inc/net/new.h')).toBe(false);
+    expect(wouldScan('inc/core/new.generated.h')).toBe(false);
+    expect(wouldScan('src/a/b/c/deep.cpp')).toBe(false);
+    expect(wouldScan('src/core/file.txt')).toBe(false);
+    expect(wouldScan('src-other/new.cpp')).toBe(false);
+  });
+
   it('skips excluded folders', async () => {
     const { graph } = await scanTestFolder(PROJECT_FOLDER);
     expect(graph.files).not.toContain('build/generated.h');

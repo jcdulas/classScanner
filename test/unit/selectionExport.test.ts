@@ -31,7 +31,7 @@ describe('source files of classes', () => {
     files: ['inc/core/engine.h', 'inc/core/util.h', 'inc/net/util.h', 'src/core/engine.cpp', 'src/core/util.cpp', 'src/net/socket.cpp', 'src/main.cpp'],
     nodes: [makeNode('Engine', 0), makeNode('CoreUtil', 1), makeNode('NetUtil', 2, [5])],
     edges: [],
-    calls: [],
+    calls: [], functionUses: [],
   };
 
   it('finds the .cpp file in a mirror tree under another top folder', () => {
@@ -56,7 +56,7 @@ describe('source files of classes', () => {
     expect(collectSourceFiles(sideBySide, ['Engine'])).toEqual(['core/engine.cpp', 'core/engine.h']);
   });
 
-  const graphOf = (files: string[]): Graph => ({ root: '/project', files, nodes: [makeNode('Engine', 0)], edges: [], calls: [] });
+  const graphOf = (files: string[]): Graph => ({ root: '/project', files, nodes: [makeNode('Engine', 0)], edges: [], calls: [], functionUses: [] });
 
   it('finds the .cpp file when the header tree has an extra folder level', () => {
     const extraLevel = graphOf(['include/myproject/engine.h', 'src/engine.cpp', 'src/other.cpp']);
@@ -147,7 +147,7 @@ describe('schema for language models', () => {
   });
 
   it('refuses an empty selection', () => {
-    const graph: Graph = { root: '/p', files: [], nodes: [], edges: [], calls: [] };
+    const graph: Graph = { root: '/p', files: [], nodes: [], edges: [], calls: [], functionUses: [] };
     expect(() => buildLlmSchema(graph, [], { projectName: 'p', relationKinds: new Set(), detail: DEFAULT_SCHEMA_DETAIL })).toThrow(
       'No class to export.',
     );

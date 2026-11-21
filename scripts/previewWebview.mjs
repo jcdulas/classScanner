@@ -2,7 +2,7 @@
 // interface without starting VS Code. Run `npm run build` first.
 //
 // Usage: node scripts/previewWebview.mjs [--theme dark|light]
-//        [--scenario default|selection|zoom|menu|menuAt|zoomAt|click|hover|doubleClick|drag|multiDrag|ctrlClickTwice|schemaPanel|interfacePanel|search|toggleRow]
+//        [--scenario default|selection|zoom|menu|menuAt|zoomAt|click|hover|doubleClick|drag|multiDrag|ctrlClickTwice|schemaPanel|interfacePanel|analysisPanel|reveal|search|toggleRow]
 //        [--x 0.5 --y 0.5] [--undo 1] [--text area] [--alt 1] [--shift 1] [--count 2]
 //        [--folder test/fixtures/project] [--relations all|inherit,compose] [--size 1500x950] [--pixel-ratio 2]
 //        [--output out/preview/preview.png] [--state '{"simplifyCardsWhenZoomedOut":false}']

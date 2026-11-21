@@ -1,5 +1,5 @@
 // The floating bars at the top of the diagram: search on the left, layout and
-// display in the middle, scan and export on the right.
+// display in the middle, analysis, scan and export on the right.
 
 import { DisplayMode, GroupingKind, LayoutKind } from '../../shared/savedState';
 import { DiagramController } from '../controller';
@@ -65,6 +65,13 @@ export function TopBar({ controller }: TopBarProps) {
       </div>
 
       <div class="glass bar">
+        <GlassButton
+          icon="analysis"
+          title="Analysis: cycles of uses, path between two classes, most used and unused classes, classes changed since a git branch"
+          isActive={store.isAnalysisPanelOpen}
+          isDisabled={!hasGraph}
+          onPress={() => store.toggleAnalysisPanel()}
+        />
         <GlassButton icon="rescan" label="Rescan" title="Scan the folder again" isDisabled={isBusy} onPress={() => controller.rescan()} />
         <GlassButton icon="export" label="Export" title="Export images, a schema or sources" variant="accent" isDisabled={!hasGraph} onPress={() => controller.startExport()} />
       </div>

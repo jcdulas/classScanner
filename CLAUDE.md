@@ -22,7 +22,7 @@ npm run package            # increments the patch version, then production build
 
 Run `npm run typecheck` and `npm test` after every change. Run `npm run test:integration` after any change to the extension host or the webview: it is the only test that runs the real webview. It writes PNG, SVG, schema and zip files to `out/integration/`; look at the PNG files to check the rendering. When the synthetic project exists, it also measures frame rates and relation toggle times (spec §8).
 
-After any change to the user interface or to the drawing, run `npm run preview` and look at the screenshot: it is the only way to see the HTML controls, which the PNG exports of the integration tests do not contain. Options: `--theme dark|light`, `--scenario default|selection|zoom|menu|menuAt|zoomAt|click|hover|doubleClick|drag|multiDrag|ctrlClickTwice|schemaPanel|interfacePanel|search|toggleRow` (scripted user actions, see `test/preview/harness.html`), `--x 0.5 --y 0.5`, `--undo 1`, `--text area`, `--alt 1`, `--shift 1` and `--count 2` (for `click` and `doubleClick`), `--state '{...}'`, `--relations all`, `--size 1000x700`, `--pixel-ratio 2`, `--folder test/synthetic-project`, `--output file.png`.
+After any change to the user interface or to the drawing, run `npm run preview` and look at the screenshot: it is the only way to see the HTML controls, which the PNG exports of the integration tests do not contain. Options: `--theme dark|light`, `--scenario default|selection|zoom|menu|menuAt|zoomAt|click|hover|doubleClick|drag|multiDrag|ctrlClickTwice|schemaPanel|interfacePanel|analysisPanel|reveal|search|toggleRow` (scripted user actions, see `test/preview/harness.html`), `--x 0.5 --y 0.5`, `--undo 1`, `--text area`, `--alt 1`, `--shift 1` and `--count 2` (for `click` and `doubleClick`), `--state '{...}'`, `--relations all`, `--size 1000x700`, `--pixel-ratio 2`, `--folder test/synthetic-project`, `--output file.png`.
 
 Press F5 in VS Code to try the extension by hand.
 
@@ -92,7 +92,7 @@ Two sides that communicate only through the typed messages of `src/shared/messag
 | `src/scanner/` | extension host | File discovery, worker pool, scan orchestration. No VS Code API, so it runs in tests |
 | `src/extension/` | extension host | Commands, webview panel, saved state, export flows |
 | `src/webview/state/` | webview | `DiagramStore`: the single source of truth of the webview, with every action |
-| `src/webview/model/` | webview | Pure geometry: cards, groups, edges, visibility. No DOM, so it runs in tests |
+| `src/webview/model/` | webview | Pure geometry and analysis: cards, groups, edges, visibility, interface of a selection, cycles and paths of uses. No DOM, so it runs in tests |
 | `src/webview/layout/` | web worker | The three layouts |
 | `src/webview/render/` | webview | PixiJS drawing, camera, culling, pointer interactions |
 | `src/webview/export/` | webview | SVG and language-model schema, built from the model |
@@ -116,4 +116,5 @@ Things that are easy to break:
 - Performance targets (spec §8) are measured on the synthetic project, not estimated. Update the measured column of the spec when they change.
 - Mouse interactions have no automated assertions. The preview scenarios play some of them (Ctrl+drag selection, wheel zoom, right-click, click, double-click and Shift+double-click, hovering an arrow) so that their result can be seen in a screenshot, and the preview script prints the files a scenario asked the editor to open; check the others by hand with F5.
 - `test/fixtures/paired` has mirror `inc` and `src` trees, for the scan of paired folders (spec §2.2).
+- `test/fixtures/precise` has calls that only a compiler can follow, for the calls asked to the C++ language extension (spec §3.3). The integration tests answer them with a stand-in. After a change to `src/extension/preciseCalls.ts`, also check the real extension: copy the Microsoft C/C++ extension from `~/.vscode/extensions` into a folder, and run `node scripts/runIntegrationTests.mjs --extensions-dir <that folder>` after `npm run build`.
 - To pass `--state` to the preview on Windows, call `node scripts/previewWebview.mjs` directly (after `npm run build`): `npm run` mangles the quotes of its JSON.

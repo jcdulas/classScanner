@@ -13,6 +13,7 @@ import { ALL_LAYOUT_KINDS } from '../../src/shared/savedState';
 import { computeLayout } from '../../src/webview/layout/computeLayout';
 import { computeCardLayout } from '../../src/webview/model/cardGeometry';
 import { groupKeyOf } from '../../src/webview/model/groups';
+import { analyzeUsage } from '../../src/webview/model/usageAnalysis';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const SYNTHETIC_PROJECT = path.join(PROJECT_ROOT, 'test', 'synthetic-project');
@@ -44,6 +45,16 @@ async function main(): Promise<void> {
   console.log(`Graph sent to the webview: ${(JSON.stringify(graph).length / 1_000_000).toFixed(1)} MB`);
   console.log(`Parse errors: ${report.parseErrorCount}, unresolved references: ${report.unresolvedTypeReferenceCount}`);
   console.log(`Scan:    ${scanDuration} ms, of which ${listingDuration} ms to list the files (target: under 15000 ms)`);
+
+  // The analysis panel computes this when it opens (spec §4.9).
+  const analysisStart = performance.now();
+  const groupKeyByClass = new Map(graph.nodes.map((node) => [node.id, groupKeyOf(node, 'namespace', graph.files)]));
+  const analysis = analyzeUsage(graph, groupKeyByClass);
+  const largestCycle = analysis.classCycles[0]?.ids.length ?? 0;
+  console.log(
+    `Usage analysis: ${Math.round(performance.now() - analysisStart)} ms for ${analysis.links.length} links ` +
+      `(${analysis.classCycles.length} cycles between classes, the largest of ${largestCycle} classes)`,
+  );
 
   // The layouts run in a web worker in the extension; the same code runs here in Node.
   const metrics = { charWidth: 7.2 };

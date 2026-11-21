@@ -172,10 +172,72 @@ describe('method definitions outside their class', () => {
     expect(run.signatureTypes.map((type) => type.name)).toEqual(['Scene', 'void']);
   });
 
-  it('removes template arguments from the owner and ignores free functions', async () => {
+  it('removes template arguments from the owner and keeps free functions apart', async () => {
     const symbols = await parseConstructFixture('definitions.cpp');
     expect(symbols.outOfClassMethods.map((method) => method.ownerName)).toEqual(['core::Engine', 'Pool', 'Engine']);
     expect(symbols.outOfClassMethods[1].scope.templateParameters).toEqual(['T']);
+    expect(symbols.freeFunctions.map((freeFunction) => freeFunction.name)).toEqual(['freeFunction']);
+  });
+});
+
+describe('parameters of a method', () => {
+  it('reads their types, how many a call must give, and whether it can give more', async () => {
+    const symbols = await parseSource(
+      [
+        'class Tool {',
+        '  void plain(int count, const Job& job);',
+        '  void withDefault(int count, double ratio = 1.0);',
+        '  void nothing(void);',
+        '  void variadic(const char* format, ...);',
+        '  template <class... Args> void pack(Args... args);',
+        '};',
+      ].join('\n'),
+    );
+    const described = findType(symbols, 'Tool').methods.map((method) => {
+      const { types, requiredCount, isVariadic } = method.parameters;
+      return `${method.name}(${types.map((type) => type.name).join(', ')}) at least ${requiredCount}${isVariadic ? ', or more' : ''}`;
+    });
+    expect(described).toEqual([
+      'plain(int, Job) at least 2',
+      'withDefault(int, double) at least 1',
+      'nothing() at least 0',
+      'variadic(char) at least 1, or more',
+      'pack() at least 0, or more',
+    ]);
+  });
+});
+
+describe('free functions', () => {
+  it('reads the types and the calls of the functions that belong to no class', async () => {
+    const symbols = await parseConstructFixture('free_functions.cpp');
+    const described = symbols.freeFunctions.map((freeFunction) => ({
+      name: freeFunction.name,
+      namespaces: freeFunction.scope.namespacePath.join('::'),
+      line: freeFunction.line,
+      signature: freeFunction.signatureTypes.map((type) => type.name),
+      body: freeFunction.bodyReferences.map((reference) => `${reference.name}@${reference.line}`),
+      calls: freeFunction.calls.map((call) => `${call.receiverKind} ${call.receiverName ?? ''}.${call.name}`),
+    }));
+    expect(described).toEqual([
+      {
+        name: 'render',
+        namespaces: 'app',
+        line: 7,
+        signature: ['Scene', 'void'],
+        body: ['Renderer@8', 'Registry@10'],
+        calls: ['variable scene.add', 'scope Registry.instance'],
+      },
+      { name: 'helper', namespaces: 'app::(anonymous)', line: 15, signature: ['Shape', 'int'], body: [], calls: ['variable shape.area'] },
+      { name: 'clamp', namespaces: '', line: 28, signature: ['T', 'T'], body: [], calls: [] },
+      { name: 'main', namespaces: '', line: 32, signature: ['int'], body: ['app::Scene@33', 'app@34'], calls: ['scope app.render'] },
+    ]);
+    // `app::shutdown` is written like a method of a class named `app`: the graph builder
+    // finds out that `app` is not a class (spec §3.2).
+    expect(symbols.outOfClassMethods.map((method) => `${method.ownerName}::${method.name}`)).toEqual(['app::shutdown']);
+    // What a function returns tells the type of the expressions that call it (spec §3.1): it is
+    // kept for the functions with code, and for the prototypes.
+    expect(symbols.freeFunctions.map((freeFunction) => freeFunction.returnType?.name)).toEqual(['void', 'int', 'T', 'int']);
+    expect(symbols.functionPrototypes.map((prototype) => `${prototype.name}: ${prototype.returnType.name}`)).toEqual(['findScene: app::Scene']);
   });
 });
 

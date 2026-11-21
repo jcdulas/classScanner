@@ -171,7 +171,7 @@ describe('visibility and isolation', () => {
       { from: 'lib::C', to: 'app::B', kind: 'compose', declarations: [{ file: 1, line: 1 }] },
       { from: 'lib::D', to: 'lib::C', kind: 'depend', declarations: [{ file: 1, line: 1 }] },
     ] satisfies Edge[],
-    calls: [],
+    calls: [], functionUses: [],
   };
   const filters = createDefaultState().filters;
 

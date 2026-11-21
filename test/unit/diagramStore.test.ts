@@ -56,7 +56,7 @@ function makeGraph(): Graph {
       { from: 'a::Left', to: 'b::Part', kind: 'compose', multiplicity: '1', declarations: [{ file: 0, line: 1 }] },
       { from: 'a::Right', to: 'b::Other', kind: 'depend', declarations: [{ file: 0, line: 1 }] },
     ],
-    calls: [],
+    calls: [], functionUses: [],
   };
 }
 

@@ -35,6 +35,8 @@ const ICON_PATHS = {
   collapse: 'M4 6h16v12H4z M9 12h6',
   // A border crossed by an arrow in each direction.
   interface: 'M12 3v18 M2 8h7 M6 5l3 3-3 3 M22 16h-7 M18 13l-3 3 3 3',
+  // Three classes that use each other in a circle.
+  analysis: 'M12 3a2 2 0 1 0 0 4a2 2 0 0 0 0-4z M5 16a2 2 0 1 0 0 4a2 2 0 0 0 0-4z M19 16a2 2 0 1 0 0 4a2 2 0 0 0 0-4z M10.6 6.6L6.2 16 M7 18h10 M17.8 16L13.4 6.6',
   locate: 'M12 3v5 M12 16v5 M3 12h5 M16 12h5 M12 11.2a.8.8 0 1 0 0 1.6a.8.8 0 0 0 0-1.6z',
 };
 

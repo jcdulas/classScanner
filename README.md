@@ -12,6 +12,8 @@
 
 The command is also in the Command Palette: **classScanner: Scan Folder for C++ Classes**.
 
+While a diagram is open, right-click in a C++ file and choose **Show Class in Diagram** to see where the class under the cursor sits.
+
 Headers in `inc`, sources in `src`? Scan either side: when the folder is inside a `src` (or `source`) folder and the same path exists under a sibling `inc` (or `include`) folder, or the other way round, both are scanned together. Scanning `project/src/core` also reads `project/inc/core`, so that classes find their methods.
 
 ## What you get
@@ -36,9 +38,13 @@ Classes, structs, unions, enums and templates, with their members, visibility, a
 
 Select a few classes and open their **Interface**: what the rest of the code uses of them, and what they use of the rest, down to the attribute, the method and the call that does it. Each line opens in the editor.
 
+### Answers, not only a map
+
+The **Analysis** panel finds the classes that use each other in a circle, the path of uses from one class to another, the most used classes and those that nothing uses, and the classes that changed since a git branch.
+
 ### Layouts you can shape
 
-Group classes by namespace, folder or file, switch to one global inheritance hierarchy, or let an organic layout pull related classes together. Related groups are placed side by side, and a collapsed group gives its room back. Drag cards where you want them: the arrangement is saved with your workspace, and every change can be undone.
+Group classes by namespace, folder or file, switch to one global inheritance hierarchy, or let an organic layout pull related classes together. Related groups are placed side by side, and a collapsed group gives its room back. Drag cards where you want them. Your arrangement is saved for that folder, and every change can be undone.
 
 ### Exports for people and for language models
 
@@ -76,7 +82,7 @@ The controls float above the diagram:
 
 - **Top left**: show or hide the side panel, search, undo and redo.
 - **Top center**: the layout, the grouping, **Recompute layout**, and the display mode of every card (auto follows the zoom, compact shows names only, full shows all members).
-- **Top right**: rescan and export.
+- **Top right**: analysis, rescan and export.
 - **Side panel**: a switch per relation kind, what changes when zoomed out, what a double-click opens (source file or header), the isolation depth, and filters by kind, namespace and folder.
 - **Bottom**: the status, the scan depth and the scan report on the left, zoom controls and the minimap on the right.
 - **Selection bar**: appears while classes are selected, with the actions that apply to them. For a single class it has one button per file, such as `engine.h` and `engine.cpp`: choose which one to open.
@@ -92,7 +98,7 @@ Two switches of the side panel, under **Zoomed out**, set what happens when you 
 
 **Recompute layout** lays the diagram out again. It reclaims the room left by cards made compact, and discards the manual moves of the current layout; like every change of the arrangement, it can be undone with Ctrl + Z. Checking or unchecking a kind under **Show** (classes, structs, unions, enums, templates, forward-declared only) does the same, so that hidden classes leave no hole; the namespace and folder filters hide cards without moving the others.
 
-While a diagram is open, saving a C++ file of its folder (or of its paired folder) scans it again: the diagram follows your code, and keeps its arrangement. The depth of a folder is asked the first time only; click **Depth** in the status to change it.
+While a diagram is open, saving a C++ file covered by the scan updates the diagram and keeps its arrangement. The scan depth and exclusion patterns apply to saves in both the selected folder and its paired folder. The depth is requested the first time you scan a folder. Click **Depth** in the status bar to change it.
 
 ### Interface of a selection
 
@@ -110,7 +116,22 @@ used by the rest of the code: 1 of 2 classes, used by 2 classes
     call of add()  geo::Renderer::render  [src/renderer.cpp:12]
 ```
 
-Every relation kind is listed, even those whose arrows are turned off. Method calls are found without a compiler, from the declared types of parameters, local variables and attributes: a call that is listed is right most of the time, but some calls are missed, for example on a variable declared with `auto`.
+Every relation kind is listed, even those whose arrows are turned off. Method calls are found without a compiler, from the types written in the code: those of parameters, local variables and attributes, and what methods are declared to return, which gives the type of a variable declared with `auto` or of a chain such as `pool.nextJob()->run()`. A call that is listed is right most of the time, but some calls are missed, for example through a lambda, a template or a macro.
+
+Those need a compiler. If you have a C++ language extension, such as Microsoft C/C++, press **Check calls with the C++ extension** at the bottom of the panel: it is asked who calls the methods of the selected classes and what they call. The calls it found get a check mark, and those the scan had missed are added. This takes from half a second to a few seconds per method, shows its progress and can be cancelled. Methods without code in the project, such as pure virtual ones, have no answer.
+
+Functions that belong to no class, such as `main`, are listed too, under their name followed by `()`: a class that only `main` uses is used. A function written in a file of a selected class counts as part of the selection.
+
+### Analysis
+
+The **Analysis** button of the top bar opens a panel with four lists. A class uses another one when it derives from it, holds it in an attribute, names it in a method or calls one of its methods, whether these relations are displayed or not.
+
+- **Cycles**: the sets of classes where each one uses every other one, directly or through others, so that none can be understood or reused alone. The same between namespaces, folders or files, following the current grouping. Unfold a cycle to see a short circle of uses among its classes, and click a line to open it.
+- **Path**: select two classes (Ctrl + click the second one) to see the shortest chain of uses from one to the other, in both directions.
+- **Usage**: the most used classes, and the classes that nothing in the scanned code uses.
+- **Changes**: **Compare with…** lists the classes whose lines changed since the last commit, or since your work left a branch. **Select all**, then open their **Interface**, to see what a change touches before a review.
+
+Click a class in a list to select it and see it in the diagram.
 
 ### Schema for an LLM
 
@@ -136,7 +157,7 @@ relations
 
 ### Saved arrangement
 
-Positions, pinned cards, collapsed groups, active relations, filters and the camera are saved in `.classscanner/` at the root of the workspace. The file is plain JSON and can be committed to share an arrangement with your team.
+classScanner saves your positions, pinned cards, collapsed groups, active relations, filters, camera and scan depth in your home directory (`~/.classscanner/`, or `%USERPROFILE%\.classscanner\` on Windows). Each scanned folder has its own JSON file. When you reopen a folder after upgrading, classScanner can read its previous arrangement and saves future changes in your home directory.
 
 ## Commands
 

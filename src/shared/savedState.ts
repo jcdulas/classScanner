@@ -1,7 +1,7 @@
-// The diagram arrangement saved in the workspace (spec §6).
+// The user's saved diagram arrangement (spec §6).
 //
 // The webview owns this state while the diagram is open and sends it to the
-// extension host, which writes it to `.classscanner/<name>.json`. When the
+// extension host, which writes it to `~/.classscanner/<name>.json`. When the
 // diagram is opened again, the host sends it back with the new graph.
 
 import { CodeSide, RelationKind } from './graphModel';
@@ -80,7 +80,7 @@ export interface SavedDiagramState {
 /** The file written by the extension host also remembers how the folder was scanned. */
 export interface SavedDiagramFile extends SavedDiagramState {
   scan: {
-    /** Scanned folder, relative to the workspace folder that contains the saved file. */
+    /** Absolute scanned folder. Older workspace files used a workspace-relative path. */
     folder: string;
     depth: number;
   };

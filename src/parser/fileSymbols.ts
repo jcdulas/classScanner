@@ -44,6 +44,34 @@ export interface BodyTypeReference {
   line: number;
 }
 
+/**
+ * An expression that a method is called on, reduced to what tells its type (spec §3.1). The
+ * parser writes down its shape; the graph builder, which knows every class, finds its type.
+ * Local variables are already replaced by their declared type, or by the expression that
+ * gives them their value when they are declared with `auto`.
+ */
+export type LiteralKind = 'integer' | 'floating' | 'string' | 'character' | 'boolean' | 'null';
+
+export type ValueExpression =
+  /** The object of the method that contains the code. */
+  | { kind: 'this' }
+  /** A name that is not a local variable: an attribute of the class, most of the time. */
+  | { kind: 'attribute'; name: string }
+  /** The type is written in the source: a typed variable, `new T`, a cast, `std::make_unique<T>()`. */
+  | { kind: 'typed'; type: TypeExpression }
+  | { kind: 'address' | 'dereference'; operand: ValueExpression }
+  /**
+   * What a call returns: `name()`, `receiver.name()`, or `scopeName::name()`. The arguments
+   * tell which overload is called, when the method has several.
+   */
+  | { kind: 'call'; name: string; arguments: ValueExpression[]; receiver?: ValueExpression; scopeName?: string }
+  /** A value written in the code, such as `42` or `"name"`: it only matters as an argument. */
+  | { kind: 'literal'; literal: LiteralKind }
+  /** `receiver.name`: an attribute of another object. */
+  | { kind: 'member'; name: string; receiver: ValueExpression }
+  /** Anything that is not followed: a lambda, an operator, a literal. */
+  | { kind: 'unknown' };
+
 /** A method call found in the code of a method, as written in the source (spec §3.1). */
 export interface CallReference {
   /** Name of the called method, for example `add` in `scene->add(shape)`. */
@@ -61,6 +89,8 @@ export interface CallReference {
   receiverName?: string;
   /** The declared type of the variable, when it is a parameter or a local variable of the method. */
   receiverType?: TypeExpression;
+  /** For an `expression`: its shape, from which its type can be found. Left out when nothing is known of it. */
+  receiverValue?: ValueExpression;
 }
 
 /** `friend class X;` */
@@ -80,6 +110,16 @@ export interface RawAttribute {
   line: number;
 }
 
+/** The parameters of a function, as needed to tell its overloads apart (spec §3.1). */
+export interface ParameterList {
+  /** The declared type of each parameter, in order. */
+  types: TypeExpression[];
+  /** Number of parameters without a default value: a call gives at least that many arguments. */
+  requiredCount: number;
+  /** True for `(...)` and for a parameter pack: a call can give any number of arguments more. */
+  isVariadic: boolean;
+}
+
 export interface RawMethod {
   name: string;
   /** Parameters, qualifiers and return type as displayed on the card, for example `(int x) const: void`. */
@@ -90,6 +130,9 @@ export interface RawMethod {
   line: number;
   /** Types of the parameters and of the return value. */
   signatureTypes: TypeExpression[];
+  /** The type of the return value; undefined for a constructor or a destructor. */
+  returnType?: TypeExpression;
+  parameters: ParameterList;
   /** Type names used in the body, when the method is defined inside the class. */
   bodyReferences: BodyTypeReference[];
   /** Method calls made in the body, when the method is defined inside the class. */
@@ -106,6 +149,7 @@ export interface TypeDeclaration {
   /** Qualified name of the enclosing class, for nested classes. */
   outerClass?: string;
   line: number;
+  sourceRange: { firstLine: number; lastLine: number };
   templateParameters?: string[];
   /** Set when this declaration is a template specialization: the qualified name of the primary template. */
   specializationOf?: string;
@@ -137,6 +181,7 @@ export interface TypeAlias {
 
 /** A method defined outside its class, for example `void Engine::run() { ... }` in a .cpp file. */
 export interface OutOfClassMethod {
+  sourceRange: { firstLine: number; lastLine: number };
   /** Owner class name as written, without template arguments, for example `core::Engine`. */
   ownerName: string;
   /** Name of the method, for example `run`. */
@@ -144,9 +189,38 @@ export interface OutOfClassMethod {
   /** Scope of the definition, used to resolve the owner name. */
   scope: LookupScope;
   signatureTypes: TypeExpression[];
+  returnType?: TypeExpression;
+  parameters: ParameterList;
   bodyReferences: BodyTypeReference[];
   calls: CallReference[];
   line: number;
+}
+
+/**
+ * A function that belongs to no class, with its code, for example `int main() { ... }`.
+ * It gets no card in the diagram: only what it uses of the classes is kept (spec §3.2).
+ */
+export interface FreeFunction {
+  /** Name as written, for example `main` or `operator<<`. */
+  name: string;
+  /** Scope of the definition: its namespaces qualify the name. */
+  scope: LookupScope;
+  signatureTypes: TypeExpression[];
+  /** The type of the return value, when one is written. */
+  returnType?: TypeExpression;
+  parameters: ParameterList;
+  bodyReferences: BodyTypeReference[];
+  calls: CallReference[];
+  line: number;
+}
+
+/** A function that belongs to no class and is declared without its code: `Job* findJob();`. */
+export interface FunctionPrototype {
+  name: string;
+  /** Scope of the declaration, to resolve the names of the return type. */
+  scope: LookupScope;
+  returnType: TypeExpression;
+  parameters: ParameterList;
 }
 
 export interface IncludeDirective {
@@ -165,6 +239,9 @@ export interface FileSymbols {
   forwardDeclarations: ForwardDeclaration[];
   aliases: TypeAlias[];
   outOfClassMethods: OutOfClassMethod[];
+  freeFunctions: FreeFunction[];
+  /** Tells what a call of a free function returns, even when its code is not in the scanned files. */
+  functionPrototypes: FunctionPrototype[];
   /** Number of syntax errors tree-sitter reported in the file. */
   parseErrorCount: number;
 }
@@ -178,6 +255,8 @@ export function createEmptyFileSymbols(relativePath: string, parseErrorCount: nu
     forwardDeclarations: [],
     aliases: [],
     outOfClassMethods: [],
+    freeFunctions: [],
+    functionPrototypes: [],
     parseErrorCount,
   };
 }

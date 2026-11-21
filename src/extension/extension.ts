@@ -4,12 +4,14 @@
 // already has a panel reveals it and scans again. The "active" panel is the
 // one the Rescan and Export commands apply to.
 
+import path from 'node:path';
 import * as vscode from 'vscode';
 import { ExportFormat, ExportScope, FrameStatistics } from '../shared/messages';
 import { SchemaDetail } from '../shared/savedState';
 import { DIAGRAM_VIEW_TYPE, DiagramPanel, PanelServices, ScanTarget } from './diagramPanel';
 import { readSettings } from './configuration';
 import { runExportFlow } from './exportFlow';
+import { PreciseCallsResult } from './preciseCalls';
 import { ArchiveLayout } from './sourceArchive';
 import { StateStore } from './stateStore';
 
@@ -28,6 +30,10 @@ export interface ClassScannerApi {
   exportActiveDiagramSources(nodeIds: string[], layout: ArchiveLayout, targetPath: string): Promise<number>;
   /** Opens a file of the active diagram in the editor, as the diagram does. */
   openActiveDiagramSource(relativePath: string, line: number): Promise<void>;
+  /** The qualified names of the classes selected in the active diagram. */
+  activeDiagramSelection(): Promise<string[]>;
+  /** What the C++ language extension answers about the methods of classes of the active diagram (spec §3.3). */
+  activeDiagramPreciseCalls(classIds: string[]): Promise<PreciseCallsResult>;
 }
 
 /** The state VS Code keeps for a panel across restarts (set by the webview with `setState`). */
@@ -50,7 +56,11 @@ export function activate(context: vscode.ExtensionContext): ClassScannerApi {
 
   const services: PanelServices = {
     extensionUri: context.extensionUri,
-    globalStorageFolder: context.globalStorageUri.fsPath,
+    createStateStore: (folder) => {
+      const workspace = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(folder));
+      const legacyStorage = workspace ? path.join(workspace.uri.fsPath, '.classscanner') : context.globalStorageUri.fsPath;
+      return new StateStore(folder, legacyStorage);
+    },
     output,
     onDidBecomeActive: (panel) => setActivePanel(panel),
     onDidDispose: (panel) => {
@@ -86,7 +96,7 @@ export function activate(context: vscode.ExtensionContext): ClassScannerApi {
       }
       // A folder that was already scanned keeps its depth: it is asked only the first time
       // (spec §2.2). "Change Scan Depth" changes it afterwards.
-      const savedState = await new StateStore(folder, context.globalStorageUri.fsPath).read();
+      const savedState = await services.createStateStore(folder).read();
       const depth = savedState?.scan.depth ?? (await askDepth(context, undefined));
       if (depth === undefined) {
         return;
@@ -119,6 +129,23 @@ export function activate(context: vscode.ExtensionContext): ClassScannerApi {
         await runExportFlow(activePanel);
       } catch (error) {
         void vscode.window.showErrorMessage(`classScanner: the export failed. ${String(error)}`);
+      }
+    }),
+    // From the editor to the diagram: shows the class under the cursor (spec §4.6).
+    vscode.commands.registerCommand('classScanner.showInDiagram', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (editor === undefined || editor.document.uri.scheme !== 'file') {
+        void vscode.window.showInformationMessage('classScanner: open a C++ file and place the cursor in a class first.');
+        return;
+      }
+      const filePath = editor.document.uri.fsPath;
+      const line = editor.selection.active.line + 1;
+      // The diagram used last comes first: a file can be part of several diagrams.
+      const candidates = [activePanel, ...panels.values()].filter((panel): panel is DiagramPanel => panel !== undefined);
+      const isShown = candidates.some((panel) => panel.revealSource(filePath, line));
+      if (!isShown) {
+        const reason = panels.size === 0 ? 'scan the folder of this file first.' : 'this file is not part of an open diagram.';
+        void vscode.window.showInformationMessage(`classScanner: ${reason}`);
       }
     }),
     // Restores the diagrams that were open when VS Code was closed: they are scanned again (spec §2.1).
@@ -163,6 +190,18 @@ export function activate(context: vscode.ExtensionContext): ClassScannerApi {
         return Promise.reject(new Error('No active diagram'));
       }
       return activePanel.openSourceFile(relativePath, line);
+    },
+    activeDiagramSelection: () => {
+      if (activePanel === undefined) {
+        return Promise.reject(new Error('No active diagram'));
+      }
+      return activePanel.requestSelection();
+    },
+    activeDiagramPreciseCalls: (classIds) => {
+      if (activePanel === undefined) {
+        return Promise.reject(new Error('No active diagram'));
+      }
+      return activePanel.collectPreciseCalls(classIds);
     },
   };
 }

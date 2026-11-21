@@ -149,7 +149,8 @@
         button.click();
       },
       // Select cards with a rectangle, then open the panel of the "Interface" button. With `text=uses`,
-      // show the second list of the panel.
+      // show the second list of the panel. With `text=precise`, press "Check calls with the C++ extension":
+      // the harness answers with one call that the scan did not find.
       interfacePanel: async () => {
         const host = document.querySelector('.diagram-host');
         dragRectangle(host.clientWidth * 0.42, host.clientHeight * 0.25, host.clientWidth * 0.7, host.clientHeight * 0.55, { ctrlKey: true });
@@ -159,7 +160,41 @@
         await wait(300);
         if (parameters.get('text') === 'uses') {
           document.querySelectorAll('.interface-panel .segment')[1].click();
+        } else if (parameters.get('text') === 'precise') {
+          document.querySelector('.interface-note .glass-button').click();
+          await wait(300);
         }
+      },
+      // Open the "Analysis" panel on the list named by `text`: cycles (the first cycle is unfolded), path
+      // (two cards are selected with Ctrl + click first), usage or changes (the harness answers the
+      // request with changed lines in two files).
+      analysisPanel: async () => {
+        const host = document.querySelector('.diagram-host');
+        const tab = parameters.get('text') || 'cycles';
+        if (tab === 'path') {
+          for (const point of [{ x: 0.52, y: 0.29 }, { x: 0.59, y: 0.51 }]) {
+            mouse('pointerdown', host.clientWidth * point.x, host.clientHeight * point.y, { ctrlKey: true });
+            mouse('pointerup', host.clientWidth * point.x, host.clientHeight * point.y, { ctrlKey: true });
+            await wait(100);
+          }
+        }
+        document.querySelector('.glass-button[title^="Analysis"]').click();
+        await wait(300);
+        const tabs = ['cycles', 'path', 'usage', 'changes'];
+        document.querySelectorAll('.analysis-panel .segment')[tabs.indexOf(tab)].click();
+        await wait(300);
+        if (tab === 'cycles') {
+          document.querySelector('.analysis-panel .interface-class-name')?.click();
+        } else if (tab === 'changes') {
+          document.querySelector('.analysis-panel .analysis-actions .glass-button').click();
+        }
+        await wait(300);
+      },
+      // Show the class of line `count` of the file `text`, as the "Show Class in Diagram" command of the editor does.
+      reveal: async () => {
+        const file = graphFiles.indexOf(parameters.get('text'));
+        window.postMessage({ type: 'revealSource', file, line: Number(parameters.get('count') || '1') }, '*');
+        await wait(1200);
       },
       // Type the `text` URL parameter in the search box.
       search: async () => {
@@ -215,6 +250,7 @@
     // The `openSource` requests of the webview, as `path:line`, read by the preview script.
     window.previewOpenedSources = [];
     let graphFiles = [];
+    let graphNodes = [];
     window.acquireVsCodeApi = () => ({
       setState() {},
       postMessage(message) {
@@ -222,10 +258,31 @@
         if (message.type === 'ready') {
           fetch('graph.json').then((response) => response.json()).then((graphMessage) => {
             graphFiles = graphMessage.graph.files;
+            graphNodes = graphMessage.graph.nodes;
             window.postMessage(graphMessage, '*');
           });
         } else if (message.type === 'openSource') {
           window.previewOpenedSources.push(`${graphFiles[message.file]}:${message.line}`);
+        } else if (message.type === 'requestPreciseCalls') {
+          // Stands for the C++ language extension: a method of the last class that was not asked about
+          // calls the last method of the first class asked about.
+          const asked = graphNodes.find((node) => message.classIds.includes(node.id) && node.methods.length > 0);
+          const callers = graphNodes.filter((node) => !message.classIds.includes(node.id) && node.methods.length > 0);
+          const caller = callers[callers.length - 1];
+          const calls = [];
+          if (asked !== undefined && asked.methods.length > 0 && caller !== undefined) {
+            const method = caller.methods[0];
+            const other = { file: method.file, firstLine: method.line, lastLine: method.line, name: method.name };
+            const askedMethod = asked.methods[asked.methods.length - 1].name;
+            calls.push({ direction: 'incoming', classId: asked.id, method: askedMethod, other, file: method.file, line: method.line });
+          }
+          window.postMessage({ type: 'preciseCalls', classIds: message.classIds, calls, askedMethodCount: 7, unansweredMethodCount: 2, wasCancelled: false }, '*');
+        } else if (message.type === 'requestChanges') {
+          // Stands for git: a few changed lines in the first source file and in the first header.
+          const files = [graphFiles.findIndex((file) => file.endsWith('.cpp')), graphFiles.findIndex((file) => file.endsWith('.h'))]
+            .filter((file) => file >= 0)
+            .map((file) => ({ file, ranges: [{ firstLine: 6, lastLine: 26 }] }));
+          window.postMessage({ type: 'changes', reference: message.reference || 'main', files }, '*');
         } else if (message.type === 'diagramShown') {
           wait(900).then(() => SCENARIOS[scenario]()).then(() => wait(700)).then(() => {
             document.title = 'preview-ready';

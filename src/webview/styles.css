@@ -792,6 +792,53 @@ body {
   font-size: 11px;
 }
 
+.interface-note .hint {
+  font-size: 11px;
+}
+
+/* The mark of a call that the C++ language extension found. */
+.use-kind .icon,
+.interface-note .hint .icon {
+  margin-left: 3px;
+  vertical-align: -1px;
+  color: var(--vscode-charts-green);
+}
+
+/* ---- Analysis panel: it shares the frame and the rows of the interface panel ---- */
+
+.analysis-heading {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 8px 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.analysis-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 4px 4px;
+}
+
+/* A class of a plain list: lighter than the title of a section that can be folded. */
+.interface-class-name.analysis-class {
+  min-height: 24px;
+  font-weight: normal;
+  font-size: 12px;
+}
+
+.analysis-indented {
+  padding-left: 27px;
+}
+
+/* In a link row the kind comes after the two classes, without the mark of a direction. */
+.use-kind.plain {
+  padding-left: 0;
+  border-left: none;
+}
+
 /* ---- Bottom elements ---- */
 
 .status-pill {
@@ -1007,7 +1054,7 @@ body {
   }
 
   .search-field {
-    width: 120px;
+    width: 84px;
   }
 
   .key-hint,

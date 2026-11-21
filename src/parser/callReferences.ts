@@ -10,7 +10,10 @@
 //   - for a variable that is a parameter or a local variable of the method,
 //     its declared type, which names the class. Attributes of the class are
 //     found later, by their name: they are declared elsewhere, often in
-//     another file.
+//     another file;
+//   - for any other expression, and for a variable declared with `auto`, the
+//     shape of the expression, from which the graph builder finds its type
+//     (valueExpressions.ts).
 //
 // In the tree-sitter C++ grammar a call is a `call_expression` whose
 // `function` field is:
@@ -19,9 +22,10 @@
 //   - a `qualified_identifier` for `Scope::method`;
 //   - an `identifier` or a `template_function` for a plain `method(...)`.
 
-import { CallReference, TypeExpression } from './fileSymbols';
+import { CallReference, ValueExpression } from './fileSymbols';
 import { SyntaxNode, lineOf, normalizeWhitespace, removeTemplateArguments } from './syntaxHelpers';
 import { readDeclaratorName, readTypeExpression } from './typeReader';
+import { LocalVariable, readValueExpression } from './valueExpressions';
 
 const PARAMETER_NODE_TYPES = ['parameter_declaration', 'optional_parameter_declaration'];
 
@@ -34,17 +38,19 @@ export function collectCallReferences(functionDeclarator: SyntaxNode, bodyNodes:
   if (bodyNodes.length === 0) {
     return [];
   }
-  const variableTypes = readVariableTypes(functionDeclarator, bodyNodes);
+  const locals = readLocalVariables(functionDeclarator, bodyNodes);
   const callsByKey = new Map<string, CallReference>();
   for (const bodyNode of bodyNodes) {
     // descendantsOfType runs inside tree-sitter, which is much faster than walking the tree in JavaScript.
     for (const callNode of bodyNode.descendantsOfType('call_expression')) {
       const functionNode = callNode === null ? null : callNode.childForFieldName('function');
-      const call = callNode === null || functionNode === null ? undefined : readCall(functionNode, lineOf(callNode), variableTypes);
+      const call = callNode === null || functionNode === null ? undefined : readCall(functionNode, lineOf(callNode), locals);
       if (call === undefined) {
         continue;
       }
-      const key = `${call.receiverKind}|${call.receiverName ?? ''}|${call.name}`;
+      // Two calls of the same method on different expressions can go to different classes.
+      const valueKey = call.receiverValue === undefined ? '' : JSON.stringify(call.receiverValue);
+      const key = `${call.receiverKind}|${call.receiverName ?? ''}|${call.name}|${valueKey}`;
       if (!callsByKey.has(key)) {
         callsByKey.set(key, call);
       }
@@ -54,21 +60,25 @@ export function collectCallReferences(functionDeclarator: SyntaxNode, bodyNodes:
 }
 
 /**
- * The declared types of the parameters and of the local variables, by name. A variable
- * declared with `auto` is in the map with an empty type name: it is known to be a local
- * variable, of an unknown type.
+ * The parameters and the local variables, by name, with their declared type. A variable
+ * declared with `auto` has no type: it comes with the expression that gives it its value,
+ * `auto* job = pool.nextJob();`, or with the container that it is an element of,
+ * `for (auto& job : jobs)`.
  */
-function readVariableTypes(functionDeclarator: SyntaxNode, bodyNodes: SyntaxNode[]): Map<string, TypeExpression> {
-  const types = new Map<string, TypeExpression>();
-  const add = (typeNode: SyntaxNode | null, declarator: SyntaxNode | null) => {
-    if (typeNode !== null && declarator !== null) {
-      types.set(readDeclaratorName(declarator), readTypeExpression(typeNode, declarator));
+function readLocalVariables(functionDeclarator: SyntaxNode, bodyNodes: SyntaxNode[]): Map<string, LocalVariable> {
+  const locals = new Map<string, LocalVariable>();
+  const add = (typeNode: SyntaxNode | null, declarator: SyntaxNode | null, initializer: SyntaxNode | null) => {
+    if (typeNode === null || declarator === null) {
+      return;
     }
+    const type = readTypeExpression(typeNode, declarator);
+    const isAuto = type.name === '' && type.templateArguments.length === 0;
+    locals.set(readDeclaratorName(declarator), isAuto ? { initializer: initializer ?? undefined } : { type });
   };
   const parameterList = functionDeclarator.childForFieldName('parameters');
   for (const parameter of parameterList === null ? [] : parameterList.descendantsOfType(PARAMETER_NODE_TYPES)) {
     if (parameter !== null) {
-      add(parameter.childForFieldName('type'), parameter.childForFieldName('declarator'));
+      add(parameter.childForFieldName('type'), parameter.childForFieldName('declarator'), null);
     }
   }
   for (const bodyNode of bodyNodes) {
@@ -77,15 +87,19 @@ function readVariableTypes(functionDeclarator: SyntaxNode, bodyNodes: SyntaxNode
       if (declaration === null) {
         continue;
       }
+      // The elements of the container of a range-based `for` have a type that its type names.
+      const container = declaration.type === 'for_range_loop' ? declaration.childForFieldName('right') : null;
       for (const declarator of declaration.childrenForFieldName('declarator')) {
-        add(declaration.childForFieldName('type'), declarator);
+        // `name = value` is an `init_declarator`, whose `value` field is the expression.
+        const value = declarator !== null && declarator.type === 'init_declarator' ? declarator.childForFieldName('value') : null;
+        add(declaration.childForFieldName('type'), declarator, container ?? value);
       }
     }
   }
-  return types;
+  return locals;
 }
 
-function readCall(functionNode: SyntaxNode, line: number, variableTypes: Map<string, TypeExpression>): CallReference | undefined {
+function readCall(functionNode: SyntaxNode, line: number, locals: Map<string, LocalVariable>): CallReference | undefined {
   switch (functionNode.type) {
     case 'identifier':
       return { name: functionNode.text, line, receiverKind: 'own' };
@@ -96,7 +110,7 @@ function readCall(functionNode: SyntaxNode, line: number, variableTypes: Map<str
     case 'qualified_identifier':
       return readScopedCall(functionNode, line);
     case 'field_expression':
-      return readMemberCall(functionNode, line, variableTypes);
+      return readMemberCall(functionNode, line, locals);
     default:
       return undefined;
   }
@@ -117,7 +131,7 @@ function readScopedCall(qualifiedIdentifier: SyntaxNode, line: number): CallRefe
 }
 
 /** `object.method()` or `object->method()`. */
-function readMemberCall(fieldExpression: SyntaxNode, line: number, variableTypes: Map<string, TypeExpression>): CallReference | undefined {
+function readMemberCall(fieldExpression: SyntaxNode, line: number, locals: Map<string, LocalVariable>): CallReference | undefined {
   const name = readCalledMethodName(fieldExpression.childForFieldName('field'));
   const object = fieldExpression.childForFieldName('argument');
   if (name === undefined || object === null) {
@@ -127,16 +141,16 @@ function readMemberCall(fieldExpression: SyntaxNode, line: number, variableTypes
     return { name, line, receiverKind: 'own' };
   }
   if (object.type === 'identifier') {
-    const type = variableTypes.get(object.text);
-    if (type === undefined) {
+    const local = locals.get(object.text);
+    if (local === undefined) {
       // Not a parameter or a local variable: an attribute of the class, most of the time.
       return { name, line, receiverKind: 'variable', receiverName: object.text };
     }
-    if (type.name === '' && type.templateArguments.length === 0) {
-      // A local variable declared with `auto`: its type is not written.
-      return { name, line, receiverKind: 'expression' };
+    if (local.type === undefined) {
+      // A local variable declared with `auto`: its type is the one of the expression that gives it its value.
+      return expressionCall(name, line, readValueExpression(object, locals));
     }
-    return { name, line, receiverKind: 'variable', receiverName: object.text, receiverType: type };
+    return { name, line, receiverKind: 'variable', receiverName: object.text, receiverType: local.type };
   }
   // `this->scene->add()`: the object is the attribute `scene`.
   const isAttributeOfThis = object.type === 'field_expression' && object.childForFieldName('argument')?.type === 'this';
@@ -144,7 +158,12 @@ function readMemberCall(fieldExpression: SyntaxNode, line: number, variableTypes
   if (attributeNode !== null && attributeNode.type === 'field_identifier') {
     return { name, line, receiverKind: 'variable', receiverName: attributeNode.text };
   }
-  return { name, line, receiverKind: 'expression' };
+  return expressionCall(name, line, readValueExpression(object, locals));
+}
+
+/** A call on an expression; its shape is left out when nothing is known of it. */
+function expressionCall(name: string, line: number, value: ValueExpression): CallReference {
+  return value.kind === 'unknown' ? { name, line, receiverKind: 'expression' } : { name, line, receiverKind: 'expression', receiverValue: value };
 }
 
 /** The method name of `object.method` or of `object.method<T>`; undefined for a destructor call. */

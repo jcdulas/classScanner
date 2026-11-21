@@ -38,6 +38,8 @@ export interface Graph {
   edges: Edge[];
   /** Calls of a method of another class, found in the code of the methods (spec §3.1). */
   calls: MethodCall[];
+  /** What the functions that belong to no class use of the classes (spec §3.2). */
+  functionUses: FunctionUse[];
   /** Paths relative to `root`, with forward slashes. Nodes and members reference them by index. */
   files: string[];
 }
@@ -64,6 +66,8 @@ export interface ClassNode {
   line: number;
   /** Indexes in Graph.files of the other files that define methods of the class, usually .cpp files. */
   definitionFiles?: number[];
+  /** Inclusive lines of all class bodies and out-of-class definitions, including conditional variants. */
+  sourceRanges?: { file: number; firstLine: number; lastLine: number }[];
   /**
    * Where the class is implemented, when that is another file than its declaration: the first
    * method defined outside the class, usually in a .cpp file, otherwise the top of the source
@@ -146,6 +150,25 @@ export interface MethodCall {
   /** Name of the called method; it is declared by `to` or by one of its base classes. */
   method: string;
   /** Where the call is: index in Graph.files and 1-based line. */
+  file: number;
+  line: number;
+}
+
+/**
+ * A use of a class by a function that belongs to no class, such as `main` (spec §3.2).
+ * Free functions have no card in the diagram; their uses complete the interface of a
+ * selection and tell that a class is used.
+ */
+export interface FunctionUse {
+  /** Qualified name of the function, for example `app::main`. */
+  functionName: string;
+  /** The class that is used. */
+  to: string;
+  /** `depend`: the function names the class in its signature or in its code. `call`: it calls one of its methods. */
+  kind: 'depend' | 'call';
+  /** For a call: the name of the called method. */
+  method?: string;
+  /** Where the use is: index in Graph.files and 1-based line. */
   file: number;
   line: number;
 }

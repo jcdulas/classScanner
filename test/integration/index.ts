@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { unzipSync } from 'fflate';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import * as vscode from 'vscode';
 import type { ClassScannerApi } from '../../src/extension/extension';
@@ -18,6 +19,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const OUTPUT_FOLDER = path.join(PROJECT_ROOT, 'out', 'integration');
 
 export async function run(): Promise<void> {
+  assert.equal(path.relative(path.join(OUTPUT_FOLDER, 'home'), homedir()), '', 'Use an isolated home for integration diagrams');
   const extension = vscode.extensions.getExtension<ClassScannerApi>('jcdulas.class-scanner');
   assert.ok(extension, 'The extension is installed');
   const api = await extension.activate();
@@ -30,6 +32,7 @@ export async function run(): Promise<void> {
   await testSyntheticProjectIfPresent(api);
   // Last, because it opens text editors next to the diagrams, which would change the frame times measured above.
   await testPairedFolders(api);
+  await testPreciseCalls(api);
 
   assert.deepEqual(webviewErrors, [], 'The webview reported no error');
   console.log(`Integration tests passed on VS Code ${vscode.version}.`);
@@ -39,7 +42,7 @@ async function testFixtureProject(api: ClassScannerApi): Promise<void> {
   const folder = path.join(PROJECT_ROOT, 'test', 'fixtures', 'project');
   // A saved arrangement with every relation kind active and one card pinned to full:
   // it is loaded by the first scan, which also tests the persistence.
-  const stateStore = new StateStore(folder, OUTPUT_FOLDER);
+  const stateStore = new StateStore(folder);
   await stateStore.write(
     { ...createDefaultState(), activeRelations: [...ALL_RELATION_KINDS], displayModes: { 'geo::Scene': 'full' } },
     -1,
@@ -93,21 +96,33 @@ async function testRescanOnSave(api: ClassScannerApi): Promise<void> {
   const file = vscode.Uri.file(path.join(PROJECT_ROOT, 'test', 'fixtures', 'project', 'top.hpp'));
   const document = await vscode.workspace.openTextDocument(file);
   const originalText = document.getText();
-  const replaceContent = async (text: string) => {
+  const replaceContent = async (target: vscode.TextDocument, text: string) => {
     const edit = new vscode.WorkspaceEdit();
-    edit.replace(file, new vscode.Range(0, 0, document.lineCount, 0), text);
+    edit.replace(target.uri, new vscode.Range(0, 0, target.lineCount, 0), text);
     await vscode.workspace.applyEdit(edit);
-    await document.save();
+    assert.ok(await target.save());
   };
+  const excluded = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(path.dirname(file.fsPath), 'build', 'generated.h')));
+  const originalExcluded = excluded.getText();
+  let scanCount = 0;
+  const listener = api.onDiagramShown(() => scanCount++);
+  try {
+    await replaceContent(excluded, originalExcluded + '\n// save in an excluded folder\n');
+    await delay(3000);
+    assert.equal(scanCount, 0, 'Saving an excluded source does not rescan the diagram');
+  } finally {
+    listener.dispose();
+    await replaceContent(excluded, originalExcluded);
+  }
   const shown = waitForEvent(api.onDiagramShown, 30_000);
   try {
-    await replaceContent(originalText + 'class AddedBySave {};\n');
+    await replaceContent(document, originalText + 'class AddedBySave {};\n');
     const info = await shown;
     // The new class is in the diagram: 11 visible classes became 12.
     assert.equal(info.visibleNodeCount, 12);
   } finally {
     const restored = waitForEvent(api.onDiagramShown, 30_000);
-    await replaceContent(originalText);
+    await replaceContent(document, originalText);
     await restored;
   }
   console.log('Rescan on save: the diagram followed a saved file.');
@@ -154,6 +169,74 @@ async function testPairedFolders(api: ClassScannerApi): Promise<void> {
   assert.deepEqual(columnsShowing(path.join(pairedProject, 'src', 'core', 'util.cpp')), [codeColumn]);
   assert.equal(vscode.window.tabGroups.all.length, groupCount, 'No editor column was added on the right of the diagram');
   console.log('Paired folders: src/core was scanned with inc/core, and files open in a single editor column.');
+
+  // From the editor to the diagram: the class of the line under the cursor is selected (spec §4.6).
+  const sourceDocument = await vscode.workspace.openTextDocument(path.join(pairedProject, 'src', 'core', 'engine.cpp'));
+  const insideRun = new vscode.Position(9, 2); // Line 10, in the code of Engine::run.
+  await vscode.window.showTextDocument(sourceDocument, { selection: new vscode.Range(insideRun, insideRun) });
+  await vscode.commands.executeCommand('classScanner.showInDiagram');
+  await delay(1000);
+  assert.deepEqual(await api.activeDiagramSelection(), ['app::Engine'], 'The class under the cursor is selected in the diagram');
+  console.log('Show Class in Diagram: the class under the cursor of the editor was selected.');
+}
+
+/**
+ * The calls found by the C++ language extension (spec §3.3), on a fixture whose calls the scan
+ * cannot follow. Without another extension, a stand-in answers like Microsoft C/C++ does; when
+ * the tests are started with `--extensions-dir`, the real extension answers.
+ */
+async function testPreciseCalls(api: ClassScannerApi): Promise<void> {
+  const folder = path.join(PROJECT_ROOT, 'test', 'fixtures', 'precise');
+  const usesRealExtension = process.env.CLASSSCANNER_REAL_CPP_EXTENSION === '1';
+  const standIn = usesRealExtension ? undefined : vscode.languages.registerCallHierarchyProvider({ pattern: '**/*.{cpp,h}' }, new StandInCallHierarchy(folder));
+  const shown = waitForEvent(api.onDiagramShown, 60_000);
+  await api.scanFolder(folder, -1);
+  await shown;
+
+  const started = Date.now();
+  const result = await api.activeDiagramPreciseCalls(['Job', 'Task']);
+  standIn?.dispose();
+  const described = result.calls
+    .map((call) => `${call.direction} ${call.classId}::${call.method} ${call.other.name} @${call.file}:${call.line}`)
+    .sort();
+  // Files of the graph, in order: main.cpp (0), tools.cpp (1), tools.h (2).
+  assert.deepEqual(described, ['incoming Job::run main @0:6', 'incoming Job::run work @1:14', 'incoming Task::run work @1:16']);
+  assert.equal(result.askedMethodCount, 2);
+  assert.equal(result.unansweredMethodCount, 0);
+  const who = usesRealExtension ? 'the installed C++ extension' : 'a stand-in for the C++ extension';
+  console.log(`Calls on what a lambda returns: found by ${who} in ${Date.now() - started} ms for 2 methods.`);
+}
+
+/** Answers the call hierarchy requests about the `precise` fixture as Microsoft C/C++ 1.35 does. */
+class StandInCallHierarchy implements vscode.CallHierarchyProvider {
+  constructor(private readonly folder: string) {}
+
+  /** A function of the fixture: its name, and the 1-based lines that it covers. */
+  private item(fileName: string, name: string, firstLine: number, lastLine: number): vscode.CallHierarchyItem {
+    const range = new vscode.Range(firstLine - 1, 0, lastLine - 1, 1);
+    return new vscode.CallHierarchyItem(vscode.SymbolKind.Function, `${name}()`, fileName, vscode.Uri.file(path.join(this.folder, fileName)), range, range);
+  }
+
+  prepareCallHierarchy(document: vscode.TextDocument, position: vscode.Position): vscode.CallHierarchyItem | undefined {
+    const line = position.line + 1;
+    if (path.basename(document.uri.fsPath) !== 'tools.cpp' || (line !== 3 && line !== 5)) {
+      return undefined;
+    }
+    return this.item('tools.cpp', 'run', line, line);
+  }
+
+  provideCallHierarchyIncomingCalls(item: vscode.CallHierarchyItem): vscode.CallHierarchyIncomingCall[] {
+    const site = (line: number) => [new vscode.Range(line - 1, 2, line - 1, 5)];
+    const work = this.item('tools.cpp', 'work', 11, 17);
+    if (item.range.start.line + 1 === 3) {
+      return [new vscode.CallHierarchyIncomingCall(work, site(14)), new vscode.CallHierarchyIncomingCall(this.item('main.cpp', 'main', 3, 8), site(6))];
+    }
+    return [new vscode.CallHierarchyIncomingCall(work, site(16))];
+  }
+
+  provideCallHierarchyOutgoingCalls(): vscode.CallHierarchyOutgoingCall[] {
+    return [];
+  }
 }
 
 function countTabsShowing(filePath: string): number {
@@ -182,7 +265,7 @@ async function testSyntheticProjectIfPresent(api: ClassScannerApi): Promise<void
     return;
   }
   // The worst case: every relation kind active (about 24 000 edges in the synthetic project).
-  await new StateStore(folder, OUTPUT_FOLDER).write({ ...createDefaultState(), activeRelations: [...ALL_RELATION_KINDS] }, -1);
+  await new StateStore(folder).write({ ...createDefaultState(), activeRelations: [...ALL_RELATION_KINDS] }, -1);
   const start = Date.now();
   const shown = waitForEvent(api.onDiagramShown, 120_000);
   await api.scanFolder(folder, -1);

@@ -12,15 +12,16 @@ Status: specification v1, implemented. Sections 8 and 11 give the measured resul
 - Extracting classes, structs, unions, enums and templates, with their members.
 - Seven relation types, each one toggled on or off separately.
 - A WebGL diagram (PixiJS v8) with semantic zoom, three layouts and collapsible groups.
-- Classes can be dragged with the mouse; the arrangement is saved in the workspace.
-- Navigation: go to source, search, filters, neighborhood focus, minimap, PNG/SVG export.
+- Users can drag classes and keep a personal arrangement for each scanned folder.
+- Navigation: go to source, show in the diagram the class under the cursor of the editor, search, filters, neighborhood focus, minimap, PNG/SVG export.
+- Analysis of who uses whom: interface of a selection, cycles, path between two classes, most used and unused classes, classes changed since a git reference.
 - Exports of the selected classes: a compact text schema for language models, and their source files in a `.zip` archive.
 
 ### Out of scope for v1
 
-- Semantic analysis through clang / clangd (no `compile_commands.json`).
+- Semantic analysis by the extension itself, through clang / clangd (no `compile_commands.json`). On request, the calls of the selected classes are asked to the C++ language extension that the user has installed (§3.3).
 - Incremental scanning: every scan, manual or after a file is saved, is complete.
-- Nodes for `typedef` / `using` and free functions.
+- Nodes for `typedef` / `using` and free functions. What free functions use of the classes is kept (§3.2), without a card.
 - Editing code from the diagram.
 - Languages other than C++.
 
@@ -46,10 +47,11 @@ Status: specification v1, implemented. Sections 8 and 11 give the measured resul
 | `classScanner.rescan` | Button in the diagram toolbar, command palette | Runs a complete scan again with the same parameters |
 | `classScanner.changeDepth` | Depth button in the status of the diagram, command palette | Asks for another depth and scans again |
 | `classScanner.exportDiagram` | Toolbar, command palette | PNG or SVG export |
+| `classScanner.showInDiagram` | Right-click in a C or C++ editor while a diagram is open, command palette | Shows in the diagram the class under the cursor (§4.6) |
 
 The scan is always complete: no cache is kept between two scans. When a diagram is reopened, the folder is scanned again and the saved arrangement is reapplied (§6).
 
-While a diagram is open, saving a C++ file of its folder, or of its paired folder (§2.2), scans the folder again one second later (several saves in a row give one scan). The arrangement, the selection and the camera are kept; the progress is shown in the status bar only. The setting `classScanner.rescanOnSave` turns this off.
+While a diagram is open, saving a C++ file within the scan depth triggers a rescan one second later. The same extension and exclusion filters apply to saves and file discovery, relative to each scan root (§2.2). Several saves in a row give one scan. The arrangement, selection and camera are kept. Progress appears in the status bar. The setting `classScanner.rescanOnSave` turns this off.
 
 ### 2.2 Depth and file selection
 
@@ -130,7 +132,7 @@ Rules:
 - A dependency from A to B is not created when an inheritance, composition or aggregation from A to B already exists.
 - Edges of the same type between the same two classes are deduplicated; for composition and aggregation, a `*` multiplicity wins over `1`. The edge keeps every line that declares it, with the attribute or the method that does: two attributes of the same class, the methods that take it as a parameter, the first line of each method that uses it in its code.
 - Edges from a class to itself are dropped.
-- Dependencies found in `.cpp` bodies are attached to the class that owns the method. Code in free functions is ignored.
+- Dependencies found in `.cpp` bodies are attached to the class that owns the method. Code in free functions creates no edge: its uses of classes are kept apart (§3.2).
 - An include is a relation between two files. Drawing it between every class of one file and every class of the other would add many edges that say nothing more, so it is drawn once, between the main class of each file: the class named like the file (`scene.h` and `Scene`), otherwise the first class that is not nested in another. For a `.cpp` file, the classes considered are those whose methods it defines.
 - Without the include paths of the compiler, an include is matched to a scanned file relative to the folder of the including file, then by path suffix (`<mylib/core/engine.h>` finds `include/mylib/core/engine.h`). When several files match, the one whose folders resemble most those of the including file wins: `#include "util.h"` in `src/core/engine.cpp` is `inc/core/util.h`, not `inc/net/util.h`.
 
@@ -145,12 +147,81 @@ Without a compiler, the class of the object of a call is not always known. A cal
 | `scene->add()`, `scene.add()`, `this->scene->add()` | `scene` is a parameter or a local variable of the method, or an attribute of the class, and its declared type names a project class. Template arguments are explored, so a `std::unique_ptr<Scene>` is a `Scene`. The variable of a range-based `for` counts as a local variable |
 | `Registry::instance()` | The name before `::` is a project class. Calls into `std` are ignored |
 | `update()`, `this->update()` | The class does not declare `update` itself and one of its base classes provides it: the call goes to that base class |
-| Any other object: `factory().create()`, a variable declared with `auto` | Exactly one of the classes that the caller has an inheritance, composition, aggregation or dependency relation to has a method of that name |
+| An expression: `pool.nextJob()->run()`, or a variable declared with `auto` | The type of the expression, worked out as described below, names a project class |
+| An expression of which nothing is known: what a lambda returns, the result of an operator | Exactly one of the classes that the caller has an inheritance, composition, aggregation or dependency relation to has a method of that name |
+
+The type of an expression is worked out from the declared types of what it is made of, the way a compiler does for the simple cases:
+
+| Expression | Its type |
+|---|---|
+| A variable declared with `auto` | The type of the expression that gives it its value; for the variable of a range-based `for`, the type of what it goes through |
+| `object.method()`, `object->method()` | What `method` returns, in the class of `object` or in one of its base classes |
+| `method()` | What the method of the class, or of one of its base classes, returns; otherwise what the free function of that name returns, from its definition or from its prototype |
+| `Class::method()` | What that method returns |
+| `Class(...)`, `new Class`, `(Class*)x`, `static_cast<Class*>(x)`, `std::make_unique<Class>()` and the like | `Class`: the type is written |
+| `object.attribute`, `this->attribute`, a name that is no local variable | The declared type of the attribute, in the class or in one of its base classes |
+| `(x)`, `*x`, `&x`, `x[i]` | Parentheses preserve the type. Taking an address produces a pointer. Dereferencing or indexing a raw pointer to a class yields an object of that class. |
+
+- As for a declared type, the result is the project classes that the type names, itself or in its template arguments: a `std::vector<Job*>` names `Job`. This is right for the container and for its elements, since the method that is called tells them apart. For the same reason, a method or a member that none of these classes has (`pointer.get()`, `list.front()`, `iterator->second`) belongs to a wrapper or to a container, and gives the same classes.
+- The names of a return type or of an attribute type are resolved where the class is declared, not where the expression is written.
+- When the type is known and has no method of the called name, the call is dropped: it is not given to another class.
+- What is not done, and that a compiler does: working out template arguments, expanding macros, following lambdas and function pointers, applying overloaded operators. The C++ language extension can be asked for these (§3.3).
+
+When a method, or a free function, has overloads that return different types, the arguments of the call choose among them, as a compiler does, with what the scan knows:
+
+1. An overload that the number of arguments does not fit is left out. Parameters with a default value can be left out of a call; `...` and a parameter pack take any number of arguments.
+2. Each argument is compared with its parameter. What is known of an argument is the project classes that its type names (§3.1, type of an expression), the declared type of a variable, or the kind of a value written in the code: `42`, `1.5`, `'c'`, `"text"`, `true`, `nullptr`.
+
+   | Argument and parameter | Rank |
+   |---|---|
+   | The same class, or the same kind of type: a whole number, a floating-point number, a character, a boolean, a text, a pointer | 3 |
+   | A conversion that the language does by itself: a number to another kind of number, a class to one of its base classes, a pointer to a boolean | 2 |
+   | A conversion that a class may define: a text between quotes to a `std::string`, a value to a class | 1 |
+   | Nothing is known of the argument or of the parameter (a template parameter, a type outside the scanned files) | 0 |
+   | No conversion: a number to a text, an object to a number, a class to an unrelated class | the overload is left out |
+
+3. Among the overloads that are left, those with the highest sum of ranks are kept. The return types of all of them are taken: one in general, several when the arguments do not tell them apart.
+
+- As in the language, a class that declares a method hides the methods of the same name of its base classes: only its own overloads are compared.
+- For overloads taking `A*` and `A&`, preserve the indirection of declared arguments, attributes and return types. A known class pointer matches the pointer overload and a class object matches the reference overload.
+- A text between quotes is a pointer to characters: given the choice between a `bool` and a `std::string` parameter, the language takes `bool`, and so does the scan.
+- When every overload is left out, a conversion that the scan does not know is assumed, and all the overloads are kept.
+- This is not the full rule of the language: conversions defined by classes are not looked for, and templates are not worked out.
 
 - In every case the class must have a method of that name, declared by itself or by one of its base classes. The call goes to the class of the object, even when the method is declared by one of its base classes.
 - A class that is only forward-declared in the scan has no known method: it is trusted when the source names it.
 - Calls inside a class, and calls of free functions, are not listed. Constructors are not calls: the dependency relation already shows them.
 - A call is kept once per calling method, called class and method name, with the line of its first occurrence.
+
+### 3.2 Free functions
+
+A function that belongs to no class, such as `main`, has no card and no arrow in the diagram, but it uses classes. Ignoring it would make a class that only `main` uses look unused. The scan therefore keeps what each free function uses of the classes:
+
+- a dependency on each class named in its signature or in its code, once per function, with the first line that names it;
+- its method calls, found by the rules of §3.1 that do not need a class: the declared type of a parameter or of a local variable, `Class::method()`, and for any other object the single class named by the function that has a method of that name.
+
+Details:
+
+- Only functions with their code are read. Of a prototype (`Job* findJob();`), only the type that it returns is kept, for the expressions that call it (§3.1). A function is named with its namespaces (`app::run`); a namespace without a name adds nothing.
+- A function defined with a qualified name whose first part is not a scanned class (`void app::shutdown() { … }`, or a method of a class outside the scanned files) is a free function too.
+- These uses appear in the interface of a selection (§4.8), where a free function is placed by its file, and they make a class count as used in the analysis (§4.9).
+- Global variables are not read: a class only used as the type of a global variable has no use.
+
+### 3.3 Calls found by the C++ language extension
+
+The scan works out the type of simple expressions only (§3.1): it misses the calls whose object needs a compiler, such as what a lambda or a template returns, or the right overload among several. A language extension that compiles the code knows them. On request, for the selected classes only, the extension asks the one that the user has installed, through the commands of VS Code that any language extension answers (`vscode.prepareCallHierarchy`, `vscode.provideIncomingCalls`, `vscode.provideOutgoingCalls`): it does not depend on a particular one. It was checked with Microsoft C/C++ 1.35.
+
+- For each method of the selected classes, at its definition when it is outside the class and at its declaration otherwise, two questions are asked: who calls it, and what it calls. Constructors and destructors are not asked about (§3.1), nor pure virtual methods, which have no code.
+- An answer gives the other function as a file, the lines it covers and its name. A function that covers the first line of a method of the graph with that name is that method; any other caller is a free function (§3.2); any other called function (a free function, a method of a library) is left out. Functions outside the scanned files are left out, and so are calls inside a class.
+- The answers complete the calls of the scan for the interface of a selection (§4.8): a call that both found is marked as confirmed, a call that only the language extension found is added, confirmed too. A call that only the scan found stays, unmarked. They are kept until the next scan, whose lines they would no longer match, and are not saved.
+- Cost, measured with Microsoft C/C++ 1.35: about 3 s per method for "who calls" on the synthetic project (2000 files), 0.5 s on a project of a few files; about 10 ms for "what it calls". The methods are therefore asked one after the other behind a notification that shows the progress and can cancel it; what was found before a cancellation is kept. Above 100 methods, the user confirms first.
+- A language extension needs a few seconds after it starts: until a first method has been answered, a method without an answer is asked again for up to 15 s.
+
+Limits that come from the language extension, as measured with Microsoft C/C++:
+
+- A method without code in the project (declared only, or defined in a library) is not known to its call hierarchy: no answer. The panel says how many methods had none.
+- A call through a pointer to a base class is a call of the method of the base class, not of the methods that override it. With a pure virtual method in the base class, that call is found by neither side: it only stays in the list when the scan found it.
+- When no language extension answers at all, the panel says so.
 
 ## 4. Diagram
 
@@ -252,6 +323,7 @@ Three layouts to choose from in the toolbar, computed in a web worker:
 | Alt+double-click on a card | Cycles the mode `auto` → `full` → `compact` |
 | Double-click on a group title | Collapses or expands the group |
 | Right-click | Context menu: display modes, isolate, open the header or the source file of the class, go to the member under the pointer (to its declaration or to its definition, when a method is defined outside its class), exports of the selection, collapse the group |
+| "Show Class in Diagram", in the editor | Right-click in a C or C++ file, or the command palette: selects in the diagram the class that the line of the cursor belongs to, and moves the view to it (see below) |
 | Ctrl+F | Search by name (substring, case-insensitive) among classes, methods and attributes. Enter recenters on the class of the result, Ctrl+Enter opens the result in the editor, on the side that a double-click opens |
 | Ctrl+Z, Ctrl+Y | Undo and redo the changes of the arrangement: moves (one step per drag), display modes, collapsed groups, layout, grouping, "Recompute layout", the layout computed for a "Show" filter (the filter itself stays as it is). Up to 50 steps, kept until the next scan |
 | Escape | Closes the menu, then clears the selection, then leaves the isolation |
@@ -289,6 +361,13 @@ Opening a class or a member with a double-click:
 - Overloads are told apart by the types of their parameters and of their return value, compared by their short names (`Scene::Item` is `Item`). Overloads with the same types, such as `begin()` and `begin() const`, get their definitions in the order of the class.
 - What has no definition of its own opens at its declaration on both sides: an attribute, a method written in the body of its class or without code in the scanned files, a class that lives in a single file.
 
+From the editor to the diagram:
+
+- "Show Class in Diagram" takes the file and the line of the cursor of the active editor, and the diagram used last among those that contain the file.
+- The scan records the inclusive line ranges of class definitions and methods defined outside their class, including template headers. A nested class owns its own lines. Free functions and gaps between definitions have no owning class. For editor navigation, a line above every definition still shows the first class.
+- The class is selected and the view moves to it. A collapsed group that hides it is expanded. A class hidden by a filter or by the isolation stays hidden, and a message says so.
+- A file that is not part of an open diagram gives a message.
+
 Where files open, whatever opened them (a class, a member, an arrow, a search result):
 
 - Every file opens in the same editor column: the column on the right of the diagram; when there is none, the column on its left; when the diagram is alone, a new column on its right. A third column is never created while a column that can show code exists.
@@ -298,7 +377,7 @@ The diagram fills the whole view; the user interface floats above it:
 
 - **Top left**: side panel toggle, search, undo and redo.
 - **Top center**: layout (segmented control), grouping criterion (dropdown), "Recompute layout", and the display mode of every card (auto, compact, full).
-- **Top right**: rescan and export.
+- **Top right**: analysis (§4.9), rescan and export.
 - **Side panel** (left, can be hidden; each section can be folded):
   - a switch for each of the seven relation types, with its line style and edge count;
   - "Zoomed out": the switches "Simplify cards" (§4.3) and "Merge relations" (§4.5);
@@ -308,7 +387,7 @@ The diagram fills the whole view; the user interface floats above it:
   - filters by namespace and by folder (check box trees with a text filter), which hide cards in place.
 - **Bottom left**: status (classes shown, level of detail, scan duration), the scan depth, which is a button to change it, and access to the scan report.
 - **Bottom right**: zoom controls (zoom out, zoom level, zoom in, fit) above the minimap, which shows the groups and a draggable viewport rectangle.
-- **Right**, above the zoom controls, while it is open: the panel of the interface of the selection (§4.8).
+- **Right**, above the zoom controls, while it is open: the panel of the interface of the selection (§4.8) or the analysis panel (§4.9). Opening one closes the other.
 - **Selection bar** (bottom center, only while classes are selected): display mode of the selection; for a single class, isolate and one button per file to open (header, source file); interface of the selection (§4.8), schema for a language model, sources as `.zip`, clear the selection.
 
 "Fit" places the diagram in the part of the view that the floating panels leave free. Below 1280 px of width the controls of the top bars keep only their icon, and below 860 px so do the buttons.
@@ -344,9 +423,39 @@ The "Interface" button of the selection bar opens a panel that tells how the sel
 - Every relation type is listed, whether it is displayed or not, and every class counts, whether a filter hides it or not: a dependency does not disappear because its arrows are turned off. Forward-declared classes count too: they are the code outside the scanned folder.
 - Each list is grouped by the class that is used, sorted by name, with its number of uses. A class can be folded; the classes start folded when the list has more than 8 of them. A class shows at most 100 uses in the panel. A button next to each class moves the view to it.
 - The header of each list gives its totals: how many classes of the selection are used and by how many outside classes, or how many outside classes the selection uses.
+- Free functions use classes too (§3.2). A selection is made of classes, so a free function is placed by its file: it is inside the selection when it is written in a file of a selected class, the file that declares the class or one that defines its methods; a helper function next to the methods of a class is part of that class's code. Its uses are listed like the others, under its name followed by `()` (`app::run()`), and counted apart in the totals ("used by 3 classes and 1 free function"). A class that only free functions of other files use is used from outside.
 - "Copy" writes both lists as text to the clipboard, complete, one line per use with its file and line, to paste into a document or a prompt.
 - While the panel is open, the arrows of the selection are drawn differently: those that come in from the rest of the code in one color (the green of the theme charts), those that go out to it in another (orange), and the arrows between two selected classes are dimmed like the rest of the diagram. Only the relation types that are turned on have arrows. "Fit" leaves the panel free when the view is wide enough.
+- "Check calls with the C++ extension", at the bottom of the panel, asks the C++ language extension of VS Code for the calls of the methods of the selected classes (§3.3). The calls it found are marked with a check in both lists, and with `confirmed` in the copied text. The panel then says how many methods were checked, how many have no code in the project, and for how many of the selected classes the calls were asked.
 - The panel follows the selection and is hidden while nothing is selected. The note at its bottom recalls that calls are found without a compiler.
+
+### 4.9 Analysis
+
+The "Analysis" button of the top bar opens a panel, at the place of the panel of the interface of a selection, that answers questions about who uses whom. It has four lists.
+
+A class uses another one when it derives from it, holds it in an attribute (composition, aggregation), names it in a method (dependency) or calls one of its methods (§3.1). As in the interface of a selection, every such relation counts, displayed or not, and every class, hidden by a filter or not. Includes, friends and nested classes are left out: an include is a relation between files that the other kinds already tell class by class; a nested class and its outer class always know each other, and a friend declaration is a permission, so both would report cycles that say nothing about the design.
+
+| List | Content |
+|---|---|
+| Cycles | The sets of classes where each one uses, directly or through others, every other one: none of them can be understood, tested or reused without the rest. Then the same between the groups of the current grouping (namespaces, folders or files), counting only uses between two groups |
+| Path | For two selected classes, the shortest chain of uses from the first to the second, and from the second to the first, or that one does not reach the other |
+| Usage | The 30 classes that the most other classes use, with that number, and the classes that no class and no free function use |
+| Changes | The classes whose lines changed since a git reference |
+
+- A cycle is listed once, the largest first, with the number and the names of its members. Unfolded, it shows a short circle of uses among them as an example, one row per link. A button selects its members and shows them in the diagram.
+- A row of a link (`Scene → Layer`) shows the first use that creates it and the number of other uses; a click opens its line in the editor. A row of a class selects the class and moves the view to it.
+- The path stays listed while its classes are selected, so that the button that selects them does not empty the list.
+- The ranking only has the classes of the scanned files, not the classes that are only forward-declared. A class listed as not used may be used from code outside the scanned folder, or in a way that the scan does not see (a global variable, a macro).
+- Lists are cut: 50 cycles of each kind, 100 classes.
+- The lists are computed when the panel opens, and again when the graph or the grouping changes: 38 ms on the synthetic project (1500 classes, 13,800 links, one cycle of 1466 classes).
+
+Changes since a git reference:
+
+- "Compare with…" asks, in a list of VS Code, for the reference: "Uncommitted changes" (since the last commit) or a local or remote branch of the repository, the usual base branches first (`main`, `master`, `develop`).
+- For a branch, the sources are compared, as they are on disk, committed or not, with the commit where the current work left that branch (the merge base): what a review of the work would show. Files that git does not track yet are new as a whole. Deleted files have no class any more.
+- The extension host runs `git` in the root folder of the graph (`merge-base`, `diff -U0`, `ls-files --others`) and sends the changed lines of the files of the diagram. The webview intersects them with the definitions described in §4.6. For a deletion, the gap between the surviving lines must fall inside the definition. Edits outside definitions have no owning class.
+- "Select all" selects the changed classes: their interface (§4.8) then tells what the change touches.
+- The list is asked again after each scan, with the same reference. Without git, or outside a repository, the panel shows the message of the failure.
 
 ## 5. Architecture
 
@@ -374,6 +483,11 @@ Messages between the two sides:
 | host → webview | `exportRequest` | Format (`png`, `svg`, `schema`), scope, scale |
 | webview → host | `exportResult` | Base64 PNG, SVG text or schema text |
 | webview → host | `exportSources`, `copyToClipboard` | Classes whose sources to archive; text to copy |
+| host → webview | `revealSource` | File and line whose class to show (§4.6) |
+| webview → host | `requestChanges` | Git reference to compare with; without it the host asks the user (§4.9) |
+| host → webview | `changes`, `changesFailed` | Changed lines of the files of the graph; or why git failed |
+| webview → host | `requestPreciseCalls` | Classes whose calls to ask the C++ language extension for (§3.3) |
+| host → webview | `preciseCalls`, `preciseCallsFailed` | The calls found, each with the other function as a file, lines and a name; or why nothing was found |
 
 The complete list is in `src/shared/messages.ts`.
 
@@ -386,6 +500,7 @@ interface Graph {
   nodes: ClassNode[];
   edges: Edge[];
   calls: MethodCall[];          // calls between classes (§3.1)
+  functionUses: FunctionUse[];  // what free functions use of the classes (§3.2)
   files: string[];              // relative paths, referenced by index
 }
 
@@ -395,6 +510,7 @@ interface ClassNode {
   kind: 'class' | 'struct' | 'union' | 'enum';
   namespace: string;
   file: number; line: number;   // declaration
+  sourceRanges?: { file: number; firstLine: number; lastLine: number }[];
   definitionFiles?: number[];   // other files that define its methods (.cpp)
   implementation?: { file: number; line: number };  // where "open the source file" goes (§4.6)
   templateParams?: string[];
@@ -434,15 +550,23 @@ interface MethodCall {
   to: string; method: string;         // the class of the object, and the called method
   file: number; line: number;
 }
+
+interface FunctionUse {
+  functionName: string;         // qualified name of the free function
+  to: string;                   // the class that is used
+  kind: 'depend' | 'call';
+  method?: string;              // for a call: the called method
+  file: number; line: number;
+}
 ```
 
 ## 6. Persistence
 
-- File `.classscanner/<folder-name>-<short hash of the path>.json` at the workspace root, readable and suitable for version control.
+- Each user has one JSON file per scanned folder in `~/.classscanner/<folder-name>-<short hash of the absolute path>.json`, both inside and outside a workspace.
 - Content: scan parameters (folder, depth), active layout and grouping criterion, positions per layout (indexed by qualified name), pinned display modes, collapsed groups, active relations, filters, the two zoom switches, what a double-click opens, camera.
 - After a rescan: known classes get their position back; new ones are placed near their group; entries of classes that disappeared are removed.
 - "Recompute layout" (§4.4) discards the manual positions of the current layout.
-- Outside of a workspace, the file is stored in the extension's global storage instead.
+- If the personal file is missing, read the previous arrangement from the workspace's `.classscanner/` directory or, for a folder outside a workspace, from the extension's global storage. All saves go to the personal directory.
 
 ## 7. Configuration
 
@@ -476,10 +600,11 @@ The measurements were made on the synthetic project of the test suite (`npm run 
 
 ## 9. Tests
 
-- **Unit tests** (`npm test`, vitest): a corpus of C++ files covering each construct (multiple inheritance, templates, nested classes, export macros, `#if`...) in `test/fixtures/constructs`, a small multi-file project in `test/fixtures/project`, a project with paired `inc` and `src` trees in `test/fixtures/paired`, and tests of name resolution, relations, method calls, card geometry, layouts, the webview store, the interface of a selection, the schema and the source file collection.
+- **Unit tests** (`npm test`, vitest): a corpus of C++ files covering each construct (multiple inheritance, templates, nested classes, export macros, `#if`...) in `test/fixtures/constructs`, a small multi-file project in `test/fixtures/project`, a project with paired `inc` and `src` trees in `test/fixtures/paired`, and tests of name resolution, relations, method calls, free functions, card geometry, layouts, the webview store, the interface of a selection, the analysis (cycles, paths, ranking, class of a line, reading of a git diff, and a real git repository created for the test), the calls found by the C++ language extension (how its answers become calls between classes), the schema and the source file collection.
 - **Integration tests** (`npm run test:integration`): run the extension in VS Code 1.130.0 (or another version with `--vscode-version`), scan the fixture project, check that the webview reports the diagram on screen without error, check the saved arrangement, and export PNG, SVG, schema and `.zip` files to `out/integration/`. They also scan one half of a pair of folders, and check that files opened from the diagram go to a single editor column, on the right of the diagram or on its left, and that opening a file twice shows a single editor. On the synthetic project they also measure frame times and relation toggle times.
 - **Benchmark** (`npm run benchmark`): scan and layout times on the synthetic project.
-- **Preview** (`npm run preview`): renders the webview in a headless browser, outside of VS Code, and saves a screenshot. Scenarios play user actions first (Ctrl+drag selection, wheel zoom, right-click, click, double-click, Shift+double-click and Alt+double-click on a card, hovering and clicking an arrow, dragging a card, Ctrl+Z, typing in the search box, opening the interface of a selection), which shows that these interactions work; the script prints the files that the scenario asked the editor to open.
+- **Calls found by the C++ language extension** (§3.3): the integration tests ask for the calls of the `test/fixtures/precise` project, whose calls are on what a lambda returns. By default no other extension is loaded and a stand-in answers as Microsoft C/C++ does. `node scripts/runIntegrationTests.mjs --extensions-dir <folder>` loads the extensions of a folder instead: with a copy of the Microsoft C/C++ extension in it, the same test checks what the real one answers.
+- **Preview** (`npm run preview`): renders the webview in a headless browser, outside of VS Code, and saves a screenshot. Scenarios play user actions first (Ctrl+drag selection, wheel zoom, right-click, click, double-click, Shift+double-click and Alt+double-click on a card, hovering and clicking an arrow, dragging a card, Ctrl+Z, typing in the search box, opening the interface of a selection and the analysis panel, showing the class of a line), which shows that these interactions work; the script prints the files that the scenario asked the editor to open.
 - Not automated: assertions on mouse interactions, and validation on a real, large open-source project.
 
 ## 10. Milestones

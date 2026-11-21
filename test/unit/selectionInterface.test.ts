@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildInterfaceText } from '../../src/webview/export/interfaceText';
-import { UsedClass, computeSelectionInterface, countUsers } from '../../src/webview/model/selectionInterface';
+import { UsedClass, computeSelectionInterface, countFreeFunctionUsers, countUsers } from '../../src/webview/model/selectionInterface';
 import { FIXTURES_DIRECTORY, buildGraphFromSources, scanTestFolder } from './testHelpers';
 
 const PROJECT_FOLDER = path.join(FIXTURES_DIRECTORY, 'project');
@@ -77,6 +77,36 @@ describe('interface of a selection', () => {
   });
 });
 
+describe('free functions in the interface of a selection', () => {
+  const sources = {
+    'scene.h': 'class Shape { public: double area(); };\nclass Scene { public: void add(Shape* shape); };\nclass Logger { public: static void log(); };',
+    // A helper next to the methods of Scene, and the method that makes scene.cpp a file of Scene.
+    'scene.cpp': '#include "scene.h"\nstatic void trace(Shape* shape) {\n  Logger::log();\n}\nvoid Scene::add(Shape* shape) {}',
+    'main.cpp': '#include "scene.h"\nnamespace app {\nint run() {\n  Scene scene;\n  scene.add(nullptr);\n  return 0;\n}\n}',
+  };
+
+  it('lists the uses by functions of other files, and counts a class as used', async () => {
+    const graph = await buildGraphFromSources(sources);
+    const result = computeSelectionInterface(graph, new Set(['Scene']));
+    expect(describeClasses(result.usedBy, graph.files)).toEqual({
+      Scene: ['depend app::run() @main.cpp:4', 'call add app::run() @main.cpp:5'],
+    });
+    expect(countUsers(result.usedBy)).toBe(0);
+    expect(countFreeFunctionUsers(result.usedBy)).toBe(1);
+    expect(result.internalIds).toEqual([]);
+  });
+
+  it('takes a function written in a file of a selected class as part of the selection', async () => {
+    const graph = await buildGraphFromSources(sources);
+    const result = computeSelectionInterface(graph, new Set(['Scene']));
+    // `trace` is in scene.cpp, which defines a method of Scene: what it uses is used by the selection.
+    expect(describeClasses(result.uses, graph.files)).toEqual({
+      Logger: ['depend trace() @scene.cpp:3', 'call log trace() @scene.cpp:3'],
+      Shape: ['depend Scene::add @scene.cpp:5', 'depend Scene::add @scene.h:2', 'depend trace() @scene.cpp:2'],
+    });
+  });
+});
+
 describe('text of the interface', () => {
   it('writes both directions, one line per use', async () => {
     const { graph } = await scanTestFolder(PROJECT_FOLDER);
@@ -84,7 +114,7 @@ describe('text of the interface', () => {
     expect(text.split('\n')).toEqual([
       '# Interface of 3 classes of project with the rest of the code, exported by classScanner.',
       '# Classes: geo::Scene, geo::Scene::Statistics, geo::Shape',
-      '# Each line is one use: its kind, the class and the member that uses, and [file:line].',
+      '# Each line is one use: its kind, the class and the member that uses (or the free function, with `()`), and [file:line].',
       '# Calls are found without a compiler: some are missed, and a few may be wrong.',
       '',
       'used by the rest of the code: 2 of 3 classes, used by 5 classes',

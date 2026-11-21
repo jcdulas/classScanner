@@ -12,7 +12,9 @@ import { collectCallReferences } from './callReferences';
 import {
   BaseClass,
   FileSymbols,
+  FreeFunction,
   FriendDeclaration,
+  FunctionPrototype,
   LookupScope,
   OutOfClassMethod,
   TypeDeclaration,
@@ -23,6 +25,7 @@ import {
   readFunctionBodyNodes,
   readInlineMethod,
   readMemberDeclaration,
+  readParameterList,
   readParameterTypes,
 } from './memberReader';
 import {
@@ -129,10 +132,30 @@ class DeclarationExtractor {
   }
 
   /** `class Foo { ... } foo;` declares a class and a variable; only the class matters here. */
+  /**
+   * A declaration outside of a class: `class Foo {...} instance;` declares a type, and
+   * `Job* findJob();` is the prototype of a free function, kept for the type that it returns.
+   */
   private visitVariableDeclaration(node: SyntaxNode, scope: LookupScope): void {
     const typeNode = node.childForFieldName('type');
-    if (typeNode !== null && isTypeDefinition(typeNode)) {
+    if (typeNode === null) {
+      return;
+    }
+    if (isTypeDefinition(typeNode)) {
       this.visitTypeSpecifier(typeNode, scope, []);
+    }
+    for (const declarator of node.childrenForFieldName('declarator')) {
+      const functionDeclarator = declarator === null ? null : findFunctionDeclarator(declarator);
+      const nameNode = functionDeclarator?.childForFieldName('declarator') ?? null;
+      if (declarator !== null && nameNode !== null && nameNode.type === 'identifier') {
+        const prototype: FunctionPrototype = {
+          name: nameNode.text,
+          scope,
+          returnType: readTypeExpression(typeNode, declarator),
+          parameters: readParameterList(functionDeclarator!),
+        };
+        this.symbols.functionPrototypes.push(prototype);
+      }
     }
   }
 
@@ -188,6 +211,7 @@ class DeclarationExtractor {
       namespace: namespaceName,
       outerClass: classPath.length > 0 ? [...scope.namespacePath, ...classPath].join('::') : undefined,
       line: lineOf(node),
+      sourceRange: definitionRange(node),
       templateParameters: templateParameters.length > 0 ? templateParameters : undefined,
       bases: [],
       attributes: [],
@@ -334,36 +358,47 @@ class DeclarationExtractor {
     });
   }
 
-  /** Only methods defined outside their class are kept, such as `void Engine::run() { ... }`. */
+  /**
+   * A function with its code, outside of a class body. With a qualified name, such as
+   * `void Engine::run() { ... }`, it is a method defined outside its class; otherwise it is a
+   * free function. Both are read the same way: the types of the signature, then the code.
+   */
   private visitFunctionDefinition(node: SyntaxNode, scope: LookupScope): void {
     const declarator = node.childForFieldName('declarator');
     const functionDeclarator = declarator === null ? null : findFunctionDeclarator(declarator);
     const nameNode = functionDeclarator?.childForFieldName('declarator') ?? null;
-    if (functionDeclarator === null || nameNode === null || nameNode.type !== 'qualified_identifier') {
-      return; // A free function: ignored (spec §3).
-    }
-    const qualifiedMethodName = readQualifiedName(nameNode);
-    const ownerEnd = qualifiedMethodName.lastIndexOf('::');
-    if (ownerEnd <= 0) {
+    if (functionDeclarator === null || nameNode === null) {
       return;
     }
-
     const signatureTypes = readParameterTypes(functionDeclarator);
     const returnTypeNode = node.childForFieldName('type');
-    if (returnTypeNode !== null) {
-      signatureTypes.push(readTypeExpression(returnTypeNode, declarator));
+    const returnType = returnTypeNode === null ? undefined : readTypeExpression(returnTypeNode, declarator);
+    if (returnType !== undefined) {
+      signatureTypes.push(returnType);
     }
     const bodyNodes = readFunctionBodyNodes(node);
-    const method: OutOfClassMethod = {
-      ownerName: qualifiedMethodName.slice(0, ownerEnd),
-      name: qualifiedMethodName.slice(ownerEnd + 2),
+    const code = {
       scope,
       signatureTypes,
+      returnType,
+      parameters: readParameterList(functionDeclarator),
       bodyReferences: collectBodyTypeReferences(bodyNodes),
       calls: collectCallReferences(functionDeclarator, bodyNodes),
       line: lineOf(node),
     };
-    this.symbols.outOfClassMethods.push(method);
+
+    const qualifiedName = nameNode.type === 'qualified_identifier' ? readQualifiedName(nameNode) : '';
+    const ownerEnd = qualifiedName.lastIndexOf('::');
+    if (ownerEnd > 0) {
+      const method: OutOfClassMethod = { ownerName: qualifiedName.slice(0, ownerEnd), name: qualifiedName.slice(ownerEnd + 2), sourceRange: definitionRange(node), ...code };
+      this.symbols.outOfClassMethods.push(method);
+      return;
+    }
+    const name = normalizeWhitespace(nameNode.text).replace(/^::/, '');
+    if (name !== '') {
+      const freeFunction: FreeFunction = { name, ...code };
+      this.symbols.freeFunctions.push(freeFunction);
+    }
   }
 
   /** Records `using namespace X;`. Other using declarations are ignored. */
@@ -394,6 +429,15 @@ class DeclarationExtractor {
 /** True for a class, struct, union or enum specifier that has a body, as opposed to a mere mention. */
 function isTypeDefinition(node: SyntaxNode): boolean {
   return ENTITY_KIND_BY_NODE_TYPE[node.type] !== undefined && node.childForFieldName('body') !== null;
+}
+
+/** Include template headers, including both headers of an out-of-class member template. */
+function definitionRange(node: SyntaxNode): { firstLine: number; lastLine: number } {
+  let first = node;
+  while (first.parent?.type === 'template_declaration') {
+    first = first.parent;
+  }
+  return { firstLine: lineOf(first), lastLine: node.endPosition.row + 1 };
 }
 
 function qualify(scope: LookupScope, name: string): string {

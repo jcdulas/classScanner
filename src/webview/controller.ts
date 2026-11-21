@@ -1,14 +1,17 @@
 // Connects the pieces of the webview: messages from the extension host, the
 // store, the renderer and the user interface actions.
 
-import { ExportFormat, ExportScope, HostToWebviewMessage } from '../shared/messages';
+import { Graph } from '../shared/graphModel';
+import { ChangedFileLines, ExportFormat, ExportScope, HostToWebviewMessage, PreciseCall } from '../shared/messages';
 import { SchemaDetail } from '../shared/savedState';
 import { buildInterfaceText } from './export/interfaceText';
 import { buildLlmSchema, estimateTokenCount } from './export/llmSchema';
 import { buildSvg } from './export/svgExport';
 import { HostConnection } from './hostConnection';
 import { FontMetrics } from './model/cardGeometry';
+import { addPreciseCalls } from './model/preciseCalls';
 import { computeSelectionInterface } from './model/selectionInterface';
+import { SourceIndex } from './model/sourceIndex';
 import { DiagramRenderer } from './render/diagramRenderer';
 import { readTheme } from './render/theme';
 import { DiagramStore } from './state/diagramStore';
@@ -19,6 +22,8 @@ const SAVE_DELAY_MS = 1000;
 export class DiagramController {
   private renderer: DiagramRenderer | undefined;
   private saveTimer: number | undefined;
+  /** The index of the lines of the last graph it was asked for (sourceIndex.ts). */
+  private sourceIndex: { graph: Graph; index: SourceIndex } | undefined;
 
   constructor(
     readonly store: DiagramStore,
@@ -70,8 +75,52 @@ export class DiagramController {
   }
 
   focusNode(id: string): void {
-    this.store.select([id], 'replace');
-    this.renderer?.focusNode(id);
+    void this.showClasses([id]);
+  }
+
+  /**
+   * Selects classes and moves the view to them. A collapsed group that hides a single class
+   * is expanded; classes hidden by a filter or by the isolation stay hidden, with a message.
+   */
+  async showClasses(ids: string[]): Promise<void> {
+    const store = this.store;
+    const knownIds = ids.filter((id) => store.nodeById.has(id));
+    if (knownIds.length === 0) {
+      return;
+    }
+    const groupKey = knownIds.length === 1 ? store.groupKeyByNode.get(knownIds[0]) : undefined;
+    if (groupKey !== undefined && store.collapsedGroups.has(groupKey)) {
+      await store.toggleGroupCollapsed(groupKey);
+    }
+    store.select(knownIds, 'replace');
+    const shownIds = knownIds.filter((id) => store.visibleNodeIds.has(id));
+    const hiddenCount = knownIds.length - shownIds.length;
+    if (hiddenCount > 0) {
+      const what = knownIds.length === 1 ? `${store.nodeById.get(knownIds[0])!.name} is` : `${hiddenCount} of these ${knownIds.length} classes are`;
+      store.showWarning(`${what} hidden by a filter or by the isolation.`);
+    }
+    if (shownIds.length === 1) {
+      this.renderer?.focusNode(shownIds[0]);
+    } else {
+      this.renderer?.showNodes(shownIds);
+    }
+  }
+
+  /**
+   * Asks the host to find the calls of the selected classes with the C++ language extension of
+   * VS Code (spec §3.3). The answer completes the interface of the selection.
+   */
+  requestPreciseCalls(): void {
+    if (this.store.selection.size === 0 || this.store.isAskingPreciseCalls) {
+      return;
+    }
+    this.store.startAskingPreciseCalls();
+    this.host.post({ type: 'requestPreciseCalls', classIds: Array.from(this.store.selection) });
+  }
+
+  /** Asks the host which classes changed since a git reference; without one, the host asks the user (spec §4.9). */
+  requestChanges(reference?: string): void {
+    this.host.post({ type: 'requestChanges', reference });
   }
 
   /** Moves the view to a class without selecting it. */
@@ -86,7 +135,8 @@ export class DiagramController {
     if (graph === undefined || selection.size === 0) {
       return;
     }
-    const text = buildInterfaceText(graph, selection, computeSelectionInterface(graph, selection), this.projectName(graph.root));
+    const selectionInterface = computeSelectionInterface(graph, selection, this.store.preciseCalls);
+    const text = buildInterfaceText(graph, selection, selectionInterface, this.projectName(graph.root));
     this.host.post({ type: 'copyToClipboard', text, description: `Interface of ${selection.size} ${selection.size === 1 ? 'class' : 'classes'}` });
   }
 
@@ -139,7 +189,27 @@ export class DiagramController {
         this.store.failScan(message.message);
         return;
       case 'graph':
+        this.store.forgetPreciseCalls();
         await this.store.loadGraph(message.graph, message.report, message.savedState, message.settings);
+        // The lines of the list of changes are those of the previous scan: it is asked again.
+        if (this.store.changes !== undefined) {
+          this.requestChanges(this.store.changes.reference);
+        }
+        return;
+      case 'revealSource':
+        await this.revealSource(message.file, message.line);
+        return;
+      case 'changes':
+        this.receiveChanges(message.reference, message.files);
+        return;
+      case 'changesFailed':
+        this.store.failChanges(message.message);
+        return;
+      case 'preciseCalls':
+        this.receivePreciseCalls(message.classIds, message.calls, message.askedMethodCount, message.unansweredMethodCount, message.wasCancelled);
+        return;
+      case 'preciseCallsFailed':
+        this.store.finishAskingPreciseCalls(message.message);
         return;
       case 'exportRequest':
         await this.handleExportRequest(message.format, message.scope, message.scale, message.schemaDetail ?? this.store.schemaDetail);
@@ -153,6 +223,59 @@ export class DiagramController {
         }
         return;
     }
+  }
+
+  /** Shows the class that a line of a file belongs to: the class under the cursor of the editor (spec §4.6). */
+  private async revealSource(file: number, line: number): Promise<void> {
+    const graph = this.store.graph;
+    if (graph === undefined) {
+      return;
+    }
+    const classId = this.sourceIndexOf(graph).classToShowAt(file, line);
+    if (classId === undefined) {
+      this.store.showWarning(`No class of the diagram at line ${line} of ${graph.files[file] ?? 'this file'}.`);
+      return;
+    }
+    await this.showClasses([classId]);
+  }
+
+  /** Turns the changed lines sent by the host into the list of the classes that they belong to. */
+  private receiveChanges(reference: string, files: ChangedFileLines[]): void {
+    const graph = this.store.graph;
+    if (graph === undefined) {
+      return;
+    }
+    const index = this.sourceIndexOf(graph);
+    const classIds = new Set<string>();
+    for (const changedFile of files) {
+      for (const range of changedFile.ranges) {
+        for (const classId of index.classesInRange(changedFile.file, range)) {
+          classIds.add(classId);
+        }
+      }
+    }
+    this.store.setChanges({ reference, classIds: Array.from(classIds).sort(), changedFileCount: files.length });
+  }
+
+  /** Adds the calls found by the C++ language extension to those already known, and says what was checked. */
+  private receivePreciseCalls(classIds: string[], calls: PreciseCall[], askedCount: number, unansweredCount: number, wasCancelled: boolean): void {
+    const graph = this.store.graph;
+    if (graph === undefined) {
+      return;
+    }
+    const preciseCalls = addPreciseCalls(this.store.preciseCalls, classIds, calls, this.sourceIndexOf(graph));
+    const parts = [wasCancelled ? 'Stopped before the end.' : `${askedCount - unansweredCount} of ${askedCount} methods checked.`];
+    if (unansweredCount > 0 && !wasCancelled) {
+      parts.push(`${unansweredCount} have no code in the project (declared only, or defined elsewhere): the C++ extension does not know who calls them.`);
+    }
+    this.store.finishAskingPreciseCalls(parts.join(' '), preciseCalls);
+  }
+
+  private sourceIndexOf(graph: Graph): SourceIndex {
+    if (this.sourceIndex?.graph !== graph) {
+      this.sourceIndex = { graph, index: new SourceIndex(graph) };
+    }
+    return this.sourceIndex.index;
   }
 
   private async handleExportRequest(format: ExportFormat, scope: ExportScope, scale: number, schemaDetail: SchemaDetail): Promise<void> {

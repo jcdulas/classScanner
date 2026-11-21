@@ -24,6 +24,7 @@ import { LayoutInput, PackingInput } from '../layout/layoutTypes';
 import { CardLayout, FontMetrics, computeCardLayout, footprintForDisplayMode } from '../model/cardGeometry';
 import { groupKeyOf } from '../model/groups';
 import { pushOverlappingCards } from '../model/overlap';
+import { PreciseCalls, createEmptyPreciseCalls } from '../model/preciseCalls';
 import { placeNewItems } from '../model/placement';
 import { GroupBox, computeGroupBoxes } from '../model/sceneGeometry';
 import { IsolationState, computeVisibleNodeIds, findNeighborhood, passesEntityFilters } from '../model/visibility';
@@ -60,6 +61,16 @@ export interface StoreChange {
 export type DiagramPhase = 'waiting' | 'scanning' | 'layouting' | 'ready' | 'failed';
 
 export type LevelOfDetail = 'overview' | 'compact' | 'full';
+
+/** The classes that changed since a git reference (spec §4.9). */
+export interface ClassChanges {
+  /** The reference the sources were compared with: a branch, or `HEAD` for the last commit. */
+  reference: string;
+  /** The classes that have changed lines, sorted by name. */
+  classIds: string[];
+  /** Number of files of the diagram that changed. */
+  changedFileCount: number;
+}
 
 export interface ContextMenuState {
   screenX: number;
@@ -136,6 +147,17 @@ export class DiagramStore {
   isSidePanelOpen = true;
   /** True when the user opened the panel of the interface of the selection (spec §4.8). */
   isInterfacePanelOpen = false;
+  /** The analysis panel takes the same place as the interface panel: opening one closes the other. */
+  isAnalysisPanelOpen = false;
+  /** The last answer about the changes of the sources, and why the last request failed, if it did. */
+  changes: ClassChanges | undefined;
+  changesFailure = '';
+  /** The calls that the C++ language extension found for the classes it was asked about (spec §3.3). */
+  preciseCalls: PreciseCalls = createEmptyPreciseCalls();
+  /** True while the extension host is asking the language extension. */
+  isAskingPreciseCalls = false;
+  /** What the last request gave, or why it failed, in words for the user. */
+  preciseCallsMessage = '';
   lastLayoutDurationMs = 0;
 
   /** Number of layouts started so far; tells a layout that ends whether a newer one replaced it. */
@@ -731,8 +753,58 @@ export class DiagramStore {
 
   toggleInterfacePanel(): void {
     this.isInterfacePanelOpen = !this.isInterfacePanelOpen;
+    if (this.isInterfacePanelOpen) {
+      this.isAnalysisPanelOpen = false;
+    }
     // The arrows of the selection are drawn differently while the panel is open.
     this.emit(['selection', 'ui']);
+  }
+
+  toggleAnalysisPanel(): void {
+    this.isAnalysisPanelOpen = !this.isAnalysisPanelOpen;
+    if (this.isAnalysisPanelOpen) {
+      this.isInterfacePanelOpen = false;
+    }
+    this.emit(['selection', 'ui']);
+  }
+
+  /** True while a panel covers the right side of the view. */
+  get showsRightPanel(): boolean {
+    return this.isAnalysisPanelOpen || this.showsSelectionInterface;
+  }
+
+  setChanges(changes: ClassChanges): void {
+    this.changes = changes;
+    this.changesFailure = '';
+    this.emit(['ui']);
+  }
+
+  failChanges(message: string): void {
+    this.changesFailure = message;
+    this.emit(['ui']);
+  }
+
+  startAskingPreciseCalls(): void {
+    this.isAskingPreciseCalls = true;
+    this.preciseCallsMessage = '';
+    this.emit(['ui']);
+  }
+
+  /** The end of a request for the calls of the language extension: new calls, or only a message. */
+  finishAskingPreciseCalls(message: string, preciseCalls?: PreciseCalls): void {
+    this.isAskingPreciseCalls = false;
+    this.preciseCallsMessage = message;
+    if (preciseCalls !== undefined) {
+      this.preciseCalls = preciseCalls;
+    }
+    this.emit(['ui']);
+  }
+
+  /** The calls of the language extension refer to the lines of a scan: a new graph starts without them. */
+  forgetPreciseCalls(): void {
+    this.preciseCalls = createEmptyPreciseCalls();
+    this.isAskingPreciseCalls = false;
+    this.preciseCallsMessage = '';
   }
 
   /** Shows a message in the banner above the diagram. */

@@ -7,13 +7,24 @@
 
 import path from 'node:path';
 import * as vscode from 'vscode';
+import { DiscoveryFilter } from '../scanner/fileDiscovery';
 import { ScanCancelledError, createWorkerParseFunction } from '../scanner/parserPool';
 import { ScanResult, scanFolder } from '../scanner/scanFolder';
-import { ExportFormat, ExportScope, FrameStatistics, HostToWebviewMessage, WebviewToHostMessage } from '../shared/messages';
+import {
+  ChangedFileLines,
+  ExportFormat,
+  ExportScope,
+  FrameStatistics,
+  HostToWebviewMessage,
+  WebviewToHostMessage,
+} from '../shared/messages';
 import { SavedDiagramState, SchemaDetail } from '../shared/savedState';
 import { collectSourceFiles } from '../model/sourceFiles';
 import { Graph } from '../shared/graphModel';
+import { askChangeReference } from './changesFlow';
 import { readSettings } from './configuration';
+import { listChangedLines } from './gitChanges';
+import { PreciseCallsResult, collectPreciseCalls, methodsToAsk } from './preciseCalls';
 import { logScanReport } from './scanReportLog';
 import { ArchiveLayout, writeSourceArchive } from './sourceArchive';
 import { chooseSourceColumn } from './sourceColumn';
@@ -21,6 +32,9 @@ import { StateStore } from './stateStore';
 import { buildWebviewHtml } from './webviewHtml';
 
 export const DIAGRAM_VIEW_TYPE = 'classScanner.diagram';
+
+/** Above this number of methods, the user confirms before the C++ language extension is asked: about 3 s per method. */
+const PRECISE_CALLS_CONFIRMATION_THRESHOLD = 100;
 
 /** Delay between the save of a file and the automatic scan, to group several saves in one scan. */
 const RESCAN_DELAY_MS = 1000;
@@ -33,7 +47,7 @@ export interface ScanTarget {
 /** Services shared by every panel, created once in extension.ts. */
 export interface PanelServices {
   extensionUri: vscode.Uri;
-  globalStorageFolder: string;
+  createStateStore: (folder: string) => StateStore;
   output: vscode.OutputChannel;
   onDidBecomeActive: (panel: DiagramPanel) => void;
   onDidDispose: (panel: DiagramPanel) => void;
@@ -69,7 +83,7 @@ export class DiagramPanel {
     private readonly services: PanelServices,
   ) {
     this.target = target;
-    this.stateStore = new StateStore(target.folder, services.globalStorageFolder);
+    this.stateStore = services.createStateStore(target.folder);
     const distFolder = vscode.Uri.joinPath(services.extensionUri, 'dist', 'webview');
     webviewPanel.webview.options = { enableScripts: true, localResourceRoots: [distFolder] };
     webviewPanel.webview.html = buildWebviewHtml(webviewPanel.webview, services.extensionUri);
@@ -116,24 +130,13 @@ export class DiagramPanel {
     if (!settings.rescanOnSave || document.uri.scheme !== 'file') {
       return;
     }
-    const extensions = settings.extensions.map((extension) => extension.toLowerCase());
-    if (!extensions.includes(path.extname(document.uri.fsPath).toLowerCase())) {
-      return;
-    }
+    const filter = new DiscoveryFilter({ extensions: settings.extensions, exclude: settings.exclude, maxDepth: this.target.depth });
     const scannedFolders = this.pairedFolder === undefined ? [this.target.folder] : [this.target.folder, this.pairedFolder];
-    if (!scannedFolders.some((folder) => this.isScannedIn(folder, document.uri.fsPath))) {
+    if (!scannedFolders.some((folder) => filter.includesSavedFile(folder, document.uri.fsPath))) {
       return;
     }
     clearTimeout(this.rescanTimer);
     this.rescanTimer = setTimeout(() => void this.scan(undefined, true), RESCAN_DELAY_MS);
-  }
-
-  /** True when the scan of `folder` reaches the file: it is inside, and not deeper than the scan goes. */
-  private isScannedIn(folder: string, filePath: string): boolean {
-    const relativePath = path.relative(folder, filePath);
-    const isInsideFolder = relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
-    const folderDepth = relativePath.split(path.sep).length - 1;
-    return isInsideFolder && (this.target.depth < 0 || folderDepth <= this.target.depth);
   }
 
   reveal(): void {
@@ -178,6 +181,128 @@ export class DiagramPanel {
       if (!isAutomatic) {
         void vscode.window.showErrorMessage(`classScanner: the scan failed. ${message}`);
       }
+    }
+  }
+
+  /**
+   * Shows in the diagram the class that a line of a file belongs to (spec §4.6). Returns false
+   * when the file is not one of the files of the diagram.
+   */
+  revealSource(filePath: string, line: number): boolean {
+    const file = this.fileIndexOf(filePath);
+    if (file === undefined) {
+      return false;
+    }
+    this.webviewPanel.reveal();
+    this.post({ type: 'revealSource', file, line });
+    return true;
+  }
+
+  /** The index in the files of the last graph of a file given by its absolute path. */
+  private fileIndexOf(filePath: string): number | undefined {
+    const graph = this.lastGraph;
+    if (graph === undefined) {
+      return undefined;
+    }
+    const wanted = comparablePath(filePath);
+    const index = graph.files.findIndex((relativePath) => comparablePath(path.join(graph.root, relativePath)) === wanted);
+    return index < 0 ? undefined : index;
+  }
+
+  /**
+   * Sends to the webview the lines of the files of the diagram that changed since a git
+   * reference (spec §4.9). Without a reference, the user chooses one first.
+   */
+  private async sendChanges(reference: string | undefined): Promise<void> {
+    const graph = this.lastGraph;
+    if (graph === undefined) {
+      return;
+    }
+    try {
+      const chosenReference = reference ?? (await askChangeReference(graph.root));
+      if (chosenReference === undefined) {
+        return;
+      }
+      const indexByPath = new Map<string, number>();
+      graph.files.forEach((relativePath, index) => indexByPath.set(comparablePath(path.join(graph.root, relativePath)), index));
+      const files: ChangedFileLines[] = [];
+      for (const changedFile of await listChangedLines(graph.root, chosenReference)) {
+        const file = indexByPath.get(comparablePath(changedFile.path));
+        if (file !== undefined) {
+          files.push({ file, ranges: changedFile.ranges });
+        }
+      }
+      this.post({ type: 'changes', reference: chosenReference, files });
+    } catch (error) {
+      this.post({ type: 'changesFailed', message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  /** The answers of the C++ language extension about some classes, without progress nor confirmation. Used by the integration tests. */
+  collectPreciseCalls(classIds: string[]): Promise<PreciseCallsResult> {
+    if (this.lastGraph === undefined) {
+      return Promise.reject(new Error('The folder has not been scanned yet.'));
+    }
+    return collectPreciseCalls(this.lastGraph, classIds, () => undefined, new vscode.CancellationTokenSource().token);
+  }
+
+  /**
+   * Asks the C++ language extension of VS Code for the calls of the methods of some classes, and
+   * sends them to the webview (spec §3.3). It takes seconds per method: a notification shows the
+   * progress and can cancel it.
+   */
+  private async sendPreciseCalls(classIds: string[]): Promise<void> {
+    const graph = this.lastGraph;
+    if (graph === undefined) {
+      return;
+    }
+    const nothingDone: HostToWebviewMessage = { type: 'preciseCalls', classIds: [], calls: [], askedMethodCount: 0, unansweredMethodCount: 0, wasCancelled: true };
+    try {
+      const methodCount = methodsToAsk(graph, classIds).length;
+      if (methodCount > PRECISE_CALLS_CONFIRMATION_THRESHOLD) {
+        const minutes = Math.ceil((methodCount * 3) / 60);
+        const answer = await vscode.window.showWarningMessage(
+          `classScanner: the C++ extension will be asked about ${methodCount} methods. On a large project this can take about ${minutes} minutes. It can be cancelled, and what was found is kept.`,
+          { modal: true },
+          'Continue',
+        );
+        if (answer !== 'Continue') {
+          this.post(nothingDone);
+          return;
+        }
+      }
+      const result = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'classScanner: asking the C++ extension', cancellable: true },
+        (progress, token) =>
+          collectPreciseCalls(
+            graph,
+            classIds,
+            (doneCount, totalCount, methodName) => progress.report({ message: `${doneCount + 1} / ${totalCount}: ${methodName}`, increment: 100 / totalCount }),
+            token,
+          ),
+      );
+      if (this.lastGraph !== graph) {
+        // The folder was scanned again meanwhile: the lines of the answers are those of the old graph.
+        this.post(nothingDone);
+      } else if (!result.wasCancelled && result.askedMethodCount > 0 && result.unansweredMethodCount === result.askedMethodCount) {
+        this.post({
+          type: 'preciseCallsFailed',
+          message:
+            'No C++ language extension answered. Install or enable one, such as Microsoft C/C++, let it finish reading the project, and try again. ' +
+            'It only knows the methods that have code in the project.',
+        });
+      } else {
+        this.post({
+          type: 'preciseCalls',
+          classIds: result.completedClassIds,
+          calls: result.calls,
+          askedMethodCount: result.askedMethodCount,
+          unansweredMethodCount: result.unansweredMethodCount,
+          wasCancelled: result.wasCancelled,
+        });
+      }
+    } catch (error) {
+      this.post({ type: 'preciseCallsFailed', message: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -356,6 +481,12 @@ export class DiagramPanel {
           void vscode.window.showErrorMessage(`classScanner: the export failed. ${String(error)}`);
         });
         return;
+      case 'requestChanges':
+        void this.sendChanges(message.reference);
+        return;
+      case 'requestPreciseCalls':
+        void this.sendPreciseCalls(message.classIds);
+        return;
       case 'performanceResult':
         this.pendingPerformanceMeasure?.(message.statistics);
         this.pendingPerformanceMeasure = undefined;
@@ -422,6 +553,12 @@ async function askArchiveLayout(): Promise<ArchiveLayout | undefined> {
   ];
   const choice = await vscode.window.showQuickPick(choices, { title: 'Layout of the .zip archive' });
   return choice?.layout;
+}
+
+/** A path in a form that compares equal for the same file: Windows paths ignore case. */
+function comparablePath(filePath: string): string {
+  const normalized = path.normalize(filePath);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
 function panelTitle(folder: string): string {

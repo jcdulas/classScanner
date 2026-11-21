@@ -49,9 +49,43 @@ interface FolderListing {
  */
 const FOLDERS_LISTED_AT_ONCE = 16;
 
+/** The same rules apply while walking a scan root and when a saved file is considered for a rescan. */
+export class DiscoveryFilter {
+  private readonly isExcluded: (relativePath: string) => boolean;
+  private readonly extensions: Set<string>;
+
+  constructor(private readonly options: DiscoveryOptions) {
+    this.isExcluded = picomatch(options.exclude, { dot: true });
+    this.extensions = new Set(options.extensions.map((extension) => extension.toLowerCase()));
+  }
+
+  includesFile(relativePath: string): boolean {
+    return this.extensions.has(path.extname(relativePath).toLowerCase()) && !this.isExcluded(relativePath);
+  }
+
+  entersFolder(relativePath: string, depth: number): boolean {
+    return (this.options.maxDepth < 0 || depth <= this.options.maxDepth)
+      && !this.isExcluded(relativePath) && !this.isExcluded(relativePath + '/');
+  }
+
+  includesSavedFile(root: string, file: string): boolean {
+    const relative = path.relative(root, file);
+    if (relative === '' || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+      return false;
+    }
+    const parts = relative.split(path.sep);
+    if (!this.includesFile(parts.join('/'))) return false;
+    let folder = '';
+    for (let depth = 1; depth < parts.length; depth++) {
+      folder += (depth === 1 ? '' : '/') + parts[depth - 1];
+      if (!this.entersFolder(folder, depth)) return false;
+    }
+    return true;
+  }
+}
+
 export async function discoverFiles(rootFolder: string, options: DiscoveryOptions): Promise<DiscoveredFile[]> {
-  const isExcluded = picomatch(options.exclude, { dot: true });
-  const extensions = new Set(options.extensions.map((extension) => extension.toLowerCase()));
+  const filter = new DiscoveryFilter(options);
 
   const listFolder = async (folder: FolderToList): Promise<FolderListing> => {
     const listing: FolderListing = { files: [], subfolders: [] };
@@ -60,12 +94,10 @@ export async function discoverFiles(rootFolder: string, options: DiscoveryOption
       const relativePath = folder.relativePath === '' ? entry.name : `${folder.relativePath}/${entry.name}`;
       const absolutePath = path.join(folder.absolutePath, entry.name);
       if (entry.isDirectory()) {
-        const canGoDeeper = options.maxDepth < 0 || folder.depth < options.maxDepth;
-        // A folder is tested with a trailing file name so that `**/build/**` matches the folder `build`.
-        if (canGoDeeper && !isExcluded(`${relativePath}/x`)) {
+        if (filter.entersFolder(relativePath, folder.depth + 1)) {
           listing.subfolders.push({ absolutePath, relativePath, depth: folder.depth + 1 });
         }
-      } else if (entry.isFile() && extensions.has(path.extname(entry.name).toLowerCase()) && !isExcluded(relativePath)) {
+      } else if (entry.isFile() && filter.includesFile(relativePath)) {
         listing.files.push({ absolutePath, relativePath });
       }
     }

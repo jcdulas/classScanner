@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.10
+
+- Git changes and editor navigation use the source ranges of classes and their method definitions. Edits to a free function after a class no longer mark that class as changed.
+- Call analysis distinguishes a class pointer from an object or reference when choosing between overloads, including calls through `auto`, attributes and method results.
+- Automatic rescans respect file and folder exclusions in both trees of a paired scan.
+- Diagram arrangements and scan depths are now saved per user in `~/.classscanner/`. Existing arrangements are restored when their folder is reopened.
+- From the code to the diagram: **Show Class in Diagram**, in the right-click menu of a C or C++ editor and in the command palette, selects in the diagram the class under the cursor and moves the view to it.
+- New **Analysis** panel, opened from the top bar: the cycles of uses between classes and between groups, the shortest path of uses between two selected classes, the most used classes and those that nothing uses, and the classes changed since the last commit or since a git branch.
+- **Check calls with the C++ extension**, in the panel of the interface of a selection: asks the C++ language extension installed in VS Code (checked with Microsoft C/C++) who calls the methods of the selected classes and what they call. It finds the calls that the scan cannot follow, such as those through a lambda or a template; the calls it found are marked with a check.
+- The scan follows more calls by itself: on a variable declared with `auto`, on what another call returns (`pool.nextJob()->run()`), on `std::make_unique<T>()`, on a cast, on an element of a container, and on attributes and methods inherited from a base class. When a method has overloads that return different classes, the arguments of the call choose the right one: `find(42)` and `find("name")` are told apart.
+- Functions that belong to no class, such as `main`, are read: what they use of the classes is listed in the interface of a selection, and a class that only such a function uses no longer looks unused.
+
 ## 0.1.9
 
 - Interface of a selection: the new **Interface** button of the selection bar lists how the selected classes are wired to the rest of the code. "Used by" shows what the rest of the code uses of them, "Uses" what they use of the rest; each line is one declaration or one call, and opens in the editor. The lists can be copied as text. While the panel is open, the arrows that enter the selection and those that leave it have their own colors.

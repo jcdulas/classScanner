@@ -193,6 +193,18 @@ export class DiagramRenderer {
     this.markCameraMoved();
   }
 
+  /** Moves the camera so that the given classes fill the view, without zooming in closer than full size. */
+  showNodes(ids: string[]): void {
+    const rects = ids.map((id) => cardRect(this.store, id)).filter((rect): rect is Rect => rect !== undefined);
+    const bounds = unionOfRects(rects);
+    if (bounds === undefined) {
+      return;
+    }
+    const target = this.camera.stateToFit(bounds, this.viewInsets());
+    this.camera.animateTo({ ...target, scale: Math.min(target.scale, 1) });
+    this.markCameraMoved();
+  }
+
   async measurePerformance(): Promise<FrameStatistics[]> {
     const statistics = await measurePanningPerformance(this.camera, this.app.ticker, () => this.markCameraMoved());
     // Toggling the most numerous relation kind with the whole diagram in view: every edge of
@@ -714,10 +726,10 @@ export class DiagramRenderer {
    * These sizes match the layout of styles.css: top bars, side panel, interface panel, bottom pills and minimap.
    */
   private viewInsets(): ViewInsets {
-    // In a narrow view the side panel and the interface panel leave no room between them:
-    // the interface panel, which is the one opened for a short time, is then ignored.
-    const isInterfacePanelShown = this.store.showsSelectionInterface && this.camera.viewWidth > 900;
-    return { left: this.store.isSidePanelOpen ? 296 : 24, top: 72, right: isInterfacePanelShown ? 408 : 24, bottom: 64 };
+    // In a narrow view the side panel and the panel on the right leave no room between them:
+    // the panel on the right, which is the one opened for a short time, is then ignored.
+    const isRightPanelShown = this.store.showsRightPanel && this.camera.viewWidth > 900;
+    return { left: this.store.isSidePanelOpen ? 296 : 24, top: 72, right: isRightPanelShown ? 408 : 24, bottom: 64 };
   }
 
   private shownBounds(): Rect | undefined {
